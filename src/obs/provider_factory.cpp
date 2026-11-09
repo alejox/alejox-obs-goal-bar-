@@ -1,7 +1,6 @@
 #include "obs/provider_factory.hpp"
 
 #include "net/net.hpp"
-#include "obs/kick_services.hpp"
 #include "obs/twitch_services.hpp"
 #include "providers/kick_provider.hpp"
 #include "providers/twitch_provider.hpp"
@@ -26,6 +25,16 @@ HttpResult fetch_youtube_page(const std::string &url, CancelToken &cancel)
 	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
 }
 
+// The default system user agent (desktop Chrome) is accepted by Kick's
+// public endpoint (checked 2026-11-09), so only Accept is added.
+const net::Headers kKickHeaders = {{"Accept", "application/json"}};
+
+HttpResult fetch_kick_channel(const std::string &url, CancelToken &cancel)
+{
+	net::Response response = net::get(url, kKickHeaders, 10000, &cancel);
+	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
+}
+
 void log_provider(const std::string &message)
 {
 	obs_log(LOG_INFO, "%s", message.c_str());
@@ -45,7 +54,7 @@ std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric)
 
 std::unique_ptr<MetricProvider> make_kick_provider(const std::string &slug, Metric metric)
 {
-	return std::make_unique<KickProvider>(kick_account(), slug, metric, log_provider);
+	return std::make_unique<KickProvider>(fetch_kick_channel, slug, metric, log_provider);
 }
 
 } // namespace goalbar::obs

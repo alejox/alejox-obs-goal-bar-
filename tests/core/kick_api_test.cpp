@@ -2,35 +2,47 @@
 
 #include "test_harness.hpp"
 
-#include <chrono>
 #include <string>
 
 using namespace goalbar;
-using namespace std::chrono_literals;
 
 namespace {
 
-// Trimmed from the GET /public/v1/channels schema on docs.kick.com/apis/channels.
-constexpr const char *kLiveChannel = R"({
-  "data": [{
-    "broadcaster_user_id": 123,
-    "slug": "streamer",
-    "stream_title": "Hello",
-    "active_subscribers_count": 87,
-    "active_gifted_subscribers_count": 3,
-    "canceled_subscribers_count": 1,
-    "category": {"id": 1, "name": "Just Chatting", "thumbnail": ""},
-    "stream": {"is_live": true, "viewer_count": 1532, "is_mature": false, "language": "en",
-               "start_time": "2026-11-09T18:00:00Z", "custom_tags": []}
-  }],
-  "message": "OK"
+// Trimmed from a real GET https://kick.com/api/v2/channels/alejoxcode answer
+// (2026-11-09, HTTP 200, application/json): an offline channel.
+constexpr const char *kOfflineChannel = R"({
+  "id": 135657770,
+  "user_id": 136303981,
+  "slug": "alejoxcode",
+  "is_banned": false,
+  "vod_enabled": true,
+  "subscription_enabled": false,
+  "is_affiliate": false,
+  "followers_count": 3,
+  "livestream": null,
+  "verified": false
 })";
 
-constexpr const char *kOfflineChannel = R"({
-  "data": [{"slug": "streamer", "active_subscribers_count": 87,
-            "stream": {"is_live": false, "viewer_count": 0}}],
-  "message": "OK"
+// Trimmed from a real answer for a channel that was live (2026-11-09).
+constexpr const char *kLiveChannel = R"({
+  "id": 17883767,
+  "slug": "sxb",
+  "followers_count": 2343528,
+  "livestream": {
+    "id": 136853793,
+    "channel_id": 17883767,
+    "is_live": true,
+    "start_time": "2026-11-09 11:23:44",
+    "viewer_count": 159190,
+    "language": "Arabic"
+  }
 })";
+
+// The shape of a Cloudflare challenge page.
+constexpr const char *kCloudflarePage =
+	"<!DOCTYPE html><html lang=\"en-US\"><head><title>Just a moment...</title></head>"
+	"<body><div id=\"challenge-error-text\">Enable JavaScript and cookies to continue</div>"
+	"<script src=\"/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1\"></script></body></html>";
 
 } // namespace
 
@@ -54,100 +66,85 @@ TEST_CASE(slug_rejects_invalid_input)
 	CHECK(normalize_kick_slug("abcdefghijklmnopqrstuvwxy").has_value());
 }
 
-TEST_CASE(channel_url_and_token_body)
+TEST_CASE(channel_url_uses_the_public_endpoint)
 {
-	CHECK_EQ(kick_channel_url("some-one"), std::string("https://api.kick.com/public/v1/channels?slug=some-one"));
-	CHECK_EQ(kick_client_credentials_body("id 1", "s&cret"),
-		 std::string("grant_type=client_credentials&client_id=id%201&client_secret=s%26cret"));
+	CHECK_EQ(kick_channel_url("some-one"), std::string("https://kick.com/api/v2/channels/some-one"));
 }
 
-TEST_CASE(token_success_is_parsed)
+TEST_CASE(offline_channel_has_followers_and_no_viewers)
 {
-	const KickTokenResponse response = parse_kick_token_response(
-		200, R"({"access_token":"tok","token_type":"Bearer","expires_in":3600})");
-	REQUIRE(response.token.has_value());
-	CHECK_EQ(response.token->access_token, std::string("tok"));
-	CHECK_EQ(response.token->expires_in.count(), 3600LL);
-	CHECK_EQ(response.error, KickTokenError::None);
-}
-
-TEST_CASE(token_failures_are_classified)
-{
-	CHECK_EQ(parse_kick_token_response(0, "").error, KickTokenError::Network);
-	const KickTokenResponse bad = parse_kick_token_response(400, R"({"error":"Invalid request"})");
-	CHECK(!bad.token.has_value());
-	CHECK_EQ(bad.error, KickTokenError::InvalidClient);
-	CHECK_EQ(bad.message, std::string("Invalid request"));
-	// Real answer of id.kick.com/oauth/token for unknown credentials (2026-11-09).
-	const KickTokenResponse unknown = parse_kick_token_response(
-		401, R"({"error":"invalid_client","error_description":"Client authentication failed"})");
-	CHECK_EQ(unknown.error, KickTokenError::InvalidClient);
-	CHECK_EQ(unknown.message, std::string("Client authentication failed"));
-	CHECK_EQ(parse_kick_token_response(429, "").error, KickTokenError::RateLimited);
-	CHECK_EQ(parse_kick_token_response(503, "oops").error, KickTokenError::Other);
-	// 200 without a token is not a success.
-	CHECK_EQ(parse_kick_token_response(200, R"({"token_type":"Bearer"})").error, KickTokenError::Other);
-}
-
-TEST_CASE(token_deadline_keeps_a_margin)
-{
-	const auto t0 = std::chrono::steady_clock::time_point{} + 1000s;
-	CHECK(kick_token_deadline(t0, 3600s) == t0 + 3300s);
-	CHECK(kick_token_deadline(t0, 200s) == t0 + 100s); // half the lifetime when shorter than the margin
-	CHECK(!kick_token_deadline(t0, 0s).has_value());
-}
-
-TEST_CASE(live_channel_is_parsed)
-{
-	const KickChannelLookup lookup = parse_kick_channels(kLiveChannel, "streamer");
+	const KickChannelLookup lookup = parse_kick_channel(200, kOfflineChannel);
 	CHECK_EQ(lookup.status, KickChannelStatus::Found);
 	REQUIRE(lookup.channel.has_value());
-	CHECK(lookup.channel->is_live);
-	CHECK_EQ(lookup.channel->viewer_count, uint64_t{1532});
-	CHECK_EQ(lookup.channel->active_subscribers.value_or(0), uint64_t{87});
-}
-
-TEST_CASE(offline_and_missing_channels)
-{
-	const KickChannelLookup offline = parse_kick_channels(kOfflineChannel, "streamer");
-	REQUIRE(offline.channel.has_value());
-	CHECK(!offline.channel->is_live);
-	CHECK_EQ(parse_kick_channels(R"({"data":[],"message":"OK"})", "nobody").status, KickChannelStatus::NotFound);
-	CHECK_EQ(parse_kick_channels("<html>", "streamer").status, KickChannelStatus::Malformed);
-	CHECK_EQ(parse_kick_channels(R"({"message":"OK"})", "streamer").status, KickChannelStatus::Malformed);
-	// No stream object: not live.
-	const KickChannelLookup bare = parse_kick_channels(R"({"data":[{"slug":"streamer"}]})", "streamer");
-	REQUIRE(bare.channel.has_value());
-	CHECK(!bare.channel->is_live);
-	CHECK(!bare.channel->active_subscribers.has_value());
-}
-
-TEST_CASE(channel_is_picked_by_slug)
-{
-	const KickChannelLookup lookup = parse_kick_channels(
-		R"({"data":[{"slug":"other","stream":{"is_live":true,"viewer_count":5}},)"
-		R"({"slug":"Streamer","stream":{"is_live":true,"viewer_count":9}}]})",
-		"streamer");
-	REQUIRE(lookup.channel.has_value());
-	CHECK_EQ(lookup.channel->viewer_count, uint64_t{9});
-}
-
-TEST_CASE(readings_follow_metric_and_live_status)
-{
-	KickChannel channel{"streamer", true, 1532, uint64_t{87}};
-	MetricReading viewers = kick_metric_reading(channel, Metric::Viewers);
-	CHECK_EQ(viewers.state, ProviderState::Live);
-	CHECK_EQ(viewers.value.value_or(0), uint64_t{1532});
-	MetricReading subs = kick_metric_reading(channel, Metric::Subscribers);
-	CHECK_EQ(subs.state, ProviderState::Live);
-	CHECK_EQ(subs.value.value_or(0), uint64_t{87});
-
-	channel.is_live = false;
-	viewers = kick_metric_reading(channel, Metric::Viewers);
+	CHECK_EQ(lookup.channel->followers.value_or(99), uint64_t{3});
+	CHECK(!lookup.channel->is_live);
+	const MetricReading followers = kick_metric_reading(lookup, Metric::Followers);
+	CHECK_EQ(followers.state, ProviderState::Live);
+	CHECK_EQ(followers.value.value_or(99), uint64_t{3});
+	const MetricReading viewers = kick_metric_reading(lookup, Metric::Viewers);
 	CHECK_EQ(viewers.state, ProviderState::NotLive);
 	CHECK(!viewers.value.has_value());
-	CHECK_EQ(kick_metric_reading(channel, Metric::Subscribers).state, ProviderState::Live);
+}
 
-	channel.active_subscribers.reset();
-	CHECK_EQ(kick_metric_reading(channel, Metric::Subscribers).state, ProviderState::Error);
+TEST_CASE(live_channel_has_viewers)
+{
+	const KickChannelLookup lookup = parse_kick_channel(200, kLiveChannel);
+	REQUIRE(lookup.channel.has_value());
+	CHECK(lookup.channel->is_live);
+	const MetricReading viewers = kick_metric_reading(lookup, Metric::Viewers);
+	CHECK_EQ(viewers.state, ProviderState::Live);
+	CHECK_EQ(viewers.value.value_or(0), uint64_t{159190});
+	CHECK_EQ(kick_metric_reading(lookup, Metric::Followers).value.value_or(0), uint64_t{2343528});
+	// Kick does not publish paid subscribers on this endpoint.
+	CHECK_EQ(kick_metric_reading(lookup, Metric::Subscribers).state, ProviderState::Error);
+}
+
+TEST_CASE(live_flag_false_or_missing_viewers)
+{
+	const KickChannelLookup ended =
+		parse_kick_channel(200, R"({"followers_count":5,"livestream":{"is_live":false,"viewer_count":7}})");
+	CHECK_EQ(kick_metric_reading(ended, Metric::Viewers).state, ProviderState::NotLive);
+	const KickChannelLookup no_count = parse_kick_channel(200, R"({"livestream":{"is_live":true}})");
+	CHECK_EQ(kick_metric_reading(no_count, Metric::Viewers).state, ProviderState::Error);
+	const KickChannelLookup bare = parse_kick_channel(200, R"({"slug":"alejoxcode"})");
+	CHECK_EQ(bare.status, KickChannelStatus::Found);
+	CHECK_EQ(kick_metric_reading(bare, Metric::Followers).state, ProviderState::Error);
+	CHECK_EQ(kick_metric_reading(bare, Metric::Viewers).state, ProviderState::NotLive);
+	const KickChannelLookup negative = parse_kick_channel(200, R"({"followers_count":-1})");
+	CHECK_EQ(kick_metric_reading(negative, Metric::Followers).state, ProviderState::Error);
+}
+
+TEST_CASE(blocked_answers_are_not_a_zero)
+{
+	const KickChannelLookup challenge = parse_kick_channel(403, kCloudflarePage);
+	CHECK_EQ(challenge.status, KickChannelStatus::Blocked);
+	CHECK_EQ(parse_kick_channel(403, "").status, KickChannelStatus::Blocked);
+	CHECK_EQ(parse_kick_channel(503, kCloudflarePage).status, KickChannelStatus::Blocked);
+	CHECK_EQ(parse_kick_channel(200, kCloudflarePage).status, KickChannelStatus::Blocked);
+	for (Metric metric : {Metric::Followers, Metric::Viewers}) {
+		const MetricReading reading = kick_metric_reading(challenge, metric);
+		CHECK_EQ(reading.state, ProviderState::Error);
+		CHECK_EQ(reading.message, std::string(kKickBlocked));
+		CHECK(!reading.value.has_value());
+	}
+}
+
+TEST_CASE(other_answers_are_classified)
+{
+	const KickChannelLookup missing =
+		parse_kick_channel(404, R"({"error":"Not Found","message":"Channel not found.","status":404})");
+	CHECK_EQ(missing.status, KickChannelStatus::NotFound);
+	CHECK_EQ(kick_metric_reading(missing, Metric::Followers).message, std::string(kKickChannelNotFound));
+
+	const KickChannelLookup limited = parse_kick_channel(429, "");
+	CHECK_EQ(limited.status, KickChannelStatus::RateLimited);
+	CHECK_EQ(kick_metric_reading(limited, Metric::Viewers).state, ProviderState::RateLimited);
+
+	const KickChannelLookup server = parse_kick_channel(500, R"({"message":"Server Error"})");
+	CHECK_EQ(server.status, KickChannelStatus::HttpError);
+	CHECK_EQ(kick_metric_reading(server, Metric::Followers).message, std::string("HTTP 500"));
+
+	const KickChannelLookup list = parse_kick_channel(200, "[]");
+	CHECK_EQ(list.status, KickChannelStatus::Malformed);
+	CHECK_EQ(kick_metric_reading(list, Metric::Followers).state, ProviderState::Error);
 }

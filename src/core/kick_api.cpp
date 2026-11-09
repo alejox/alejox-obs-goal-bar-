@@ -1,6 +1,6 @@
 #include "core/kick_api.hpp"
 
-#include "core/twitch_auth.hpp" // url_encode, form_encode
+#include "core/twitch_auth.hpp" // url_encode
 
 #include <json.hpp>
 
@@ -44,21 +44,6 @@ std::optional<uint64_t> unsigned_field(const json &object, const char *key)
 	return it->get<uint64_t>();
 }
 
-KickChannel channel_from(const json &object)
-{
-	KickChannel channel;
-	if (const auto slug = object.find("slug"); slug != object.end() && slug->is_string())
-		channel.slug = slug->get<std::string>();
-	channel.active_subscribers = unsigned_field(object, "active_subscribers_count");
-	const auto stream = object.find("stream");
-	if (stream != object.end() && stream->is_object()) {
-		const auto live = stream->find("is_live");
-		channel.is_live = live != stream->end() && live->is_boolean() && live->get<bool>();
-		channel.viewer_count = unsigned_field(*stream, "viewer_count").value_or(0);
-	}
-	return channel;
-}
-
 } // namespace
 
 std::optional<std::string> normalize_kick_slug(std::string_view input)
@@ -87,116 +72,93 @@ std::optional<std::string> normalize_kick_slug(std::string_view input)
 
 std::string kick_channel_url(std::string_view slug)
 {
-	return std::string(kKickApiEndpoint) + "/channels?slug=" + url_encode(slug);
+	return std::string(kKickPublicEndpoint) + "/channels/" + url_encode(slug);
 }
 
-std::string kick_client_credentials_body(std::string_view client_id, std::string_view client_secret)
-{
-	return form_encode({{"grant_type", "client_credentials"},
-			    {"client_id", std::string(client_id)},
-			    {"client_secret", std::string(client_secret)}});
-}
-
-KickTokenResponse parse_kick_token_response(int status, std::string_view body)
-{
-	KickTokenResponse response;
-	if (status == 0) {
-		response.error = KickTokenError::Network;
-		response.message = "no response";
-		return response;
-	}
-	const json parsed = json::parse(body.begin(), body.end(), nullptr, false);
-	const bool object = !parsed.is_discarded() && parsed.is_object();
-	if (object) {
-		for (const char *key : {"error_description", "error", "message"}) {
-			const auto it = parsed.find(key);
-			if (it != parsed.end() && it->is_string() && !it->get<std::string>().empty()) {
-				response.message = it->get<std::string>();
-				break;
-			}
-		}
-	}
-	if (status >= 200 && status < 300 && object) {
-		const auto token = parsed.find("access_token");
-		if (token != parsed.end() && token->is_string() && !token->get<std::string>().empty()) {
-			KickAppToken app;
-			app.access_token = token->get<std::string>();
-			const auto expires = parsed.find("expires_in");
-			if (expires != parsed.end() && expires->is_number_integer() && expires->get<long long>() > 0)
-				app.expires_in = std::chrono::seconds(expires->get<long long>());
-			response.token = std::move(app);
-			response.message.clear();
-			return response;
-		}
-	}
-	if (status == 400 || status == 401 || status == 403)
-		response.error = KickTokenError::InvalidClient;
-	else if (status == 429)
-		response.error = KickTokenError::RateLimited;
-	else
-		response.error = KickTokenError::Other;
-	if (response.message.empty())
-		response.message = "HTTP " + std::to_string(status);
-	return response;
-}
-
-std::optional<std::chrono::steady_clock::time_point>
-kick_token_deadline(std::chrono::steady_clock::time_point obtained, std::chrono::seconds expires_in)
-{
-	if (expires_in <= std::chrono::seconds{0})
-		return std::nullopt;
-	const std::chrono::seconds lead = std::min(kKickTokenMargin, expires_in / 2);
-	return obtained + (expires_in - lead);
-}
-
-KickChannelLookup parse_kick_channels(std::string_view text, std::string_view slug)
+KickChannelLookup parse_kick_channel(int status, std::string_view body)
 {
 	KickChannelLookup lookup;
-	const json parsed = json::parse(text.begin(), text.end(), nullptr, false);
-	if (parsed.is_discarded() || !parsed.is_object())
-		return lookup;
-	const auto data = parsed.find("data");
-	if (data == parsed.end() || !data->is_array())
-		return lookup;
-	if (data->empty()) {
+	lookup.http_status = status;
+	const json parsed = json::parse(body.begin(), body.end(), nullptr, false);
+	const bool is_json = !parsed.is_discarded();
+	if (status == 404) {
 		lookup.status = KickChannelStatus::NotFound;
 		return lookup;
 	}
-	const std::string wanted = lowercase(slug);
-	const json *match = nullptr;
-	for (const json &item : *data) {
-		if (!item.is_object())
-			continue;
-		const auto it = item.find("slug");
-		if (it != item.end() && it->is_string() && lowercase(it->get<std::string>()) == wanted) {
-			match = &item;
-			break;
-		}
-		if (!match)
-			match = &item; // first channel when none matches by slug
-	}
-	if (!match)
+	if (status == 429) {
+		lookup.status = KickChannelStatus::RateLimited;
 		return lookup;
+	}
+	// Cloudflare answers a blocked client with 403 (or 503 while it runs a
+	// challenge) and an HTML page; the endpoint itself only speaks JSON.
+	if (status == 403 || (!is_json && (status == 503 || (status >= 200 && status < 300)))) {
+		lookup.status = KickChannelStatus::Blocked;
+		return lookup;
+	}
+	if (status < 200 || status >= 300) {
+		lookup.status = KickChannelStatus::HttpError;
+		return lookup;
+	}
+	if (!parsed.is_object())
+		return lookup; // Malformed
+
+	KickChannel channel;
+	channel.followers = unsigned_field(parsed, "followers_count");
+	const auto stream = parsed.find("livestream");
+	if (stream != parsed.end() && stream->is_object()) {
+		const auto live = stream->find("is_live");
+		channel.is_live = live != stream->end() && live->is_boolean() && live->get<bool>();
+		channel.viewer_count = unsigned_field(*stream, "viewer_count");
+	}
 	lookup.status = KickChannelStatus::Found;
-	lookup.channel = channel_from(*match);
+	lookup.channel = channel;
 	return lookup;
 }
 
-MetricReading kick_metric_reading(const KickChannel &channel, Metric metric)
+MetricReading kick_metric_reading(const KickChannelLookup &lookup, Metric metric)
 {
 	MetricReading reading;
-	if (metric == Metric::Subscribers) {
-		if (!channel.active_subscribers) {
-			reading.state = ProviderState::Error;
-			reading.message = "subscriber count missing in the Kick answer";
+	reading.state = ProviderState::Error;
+	switch (lookup.status) {
+	case KickChannelStatus::Found:
+		break;
+	case KickChannelStatus::NotFound:
+		reading.message = kKickChannelNotFound;
+		return reading;
+	case KickChannelStatus::Blocked:
+		reading.message = kKickBlocked;
+		return reading;
+	case KickChannelStatus::RateLimited:
+		reading.state = ProviderState::RateLimited;
+		reading.message = "Kick rate limit";
+		return reading;
+	case KickChannelStatus::HttpError:
+		reading.message = "HTTP " + std::to_string(lookup.http_status);
+		return reading;
+	case KickChannelStatus::Malformed:
+		reading.message = "unexpected answer from Kick";
+		return reading;
+	}
+	const KickChannel &channel = *lookup.channel;
+	if (metric == Metric::Followers) {
+		if (!channel.followers) {
+			reading.message = "follower count missing in the Kick answer";
 			return reading;
 		}
 		reading.state = ProviderState::Live;
-		reading.value = channel.active_subscribers;
+		reading.value = channel.followers;
+		return reading;
+	}
+	if (metric != Metric::Viewers) {
+		reading.message = "Kick does not publish this metric";
 		return reading;
 	}
 	if (!channel.is_live) {
 		reading.state = ProviderState::NotLive;
+		return reading;
+	}
+	if (!channel.viewer_count) {
+		reading.message = "viewer count missing in the Kick answer";
 		return reading;
 	}
 	reading.state = ProviderState::Live;

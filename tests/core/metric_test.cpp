@@ -37,3 +37,29 @@ TEST_CASE(unknown_ids_are_rejected)
 	CHECK(!metric_from_id("Viewers").has_value());
 	CHECK(!platform_from_id("").has_value());
 }
+
+TEST_CASE(platforms_read_only_their_metrics)
+{
+	CHECK(platform_reads(Platform::YouTube, Metric::Likes));
+	CHECK(platform_reads(Platform::YouTube, Metric::Subscribers));
+	CHECK(!platform_reads(Platform::YouTube, Metric::Viewers));
+	CHECK(platform_reads(Platform::Twitch, Metric::Followers));
+	CHECK(platform_reads(Platform::Twitch, Metric::Subscribers));
+	CHECK(platform_reads(Platform::Kick, Metric::Followers));
+	CHECK(platform_reads(Platform::Kick, Metric::Viewers));
+	CHECK(!platform_reads(Platform::Kick, Metric::Subscribers));
+	CHECK(!platform_reads(Platform::Kick, Metric::Likes));
+	CHECK(platform_reads(Platform::Manual, Metric::Subscribers));
+	CHECK(!platform_reads(Platform::Manual, Metric::Viewers));
+}
+
+TEST_CASE(unreadable_metrics_fall_back_to_the_platform_default)
+{
+	// A Kick source saved with subscribers (T11) now reads followers.
+	CHECK(readable_metric(Platform::Kick, Metric::Subscribers) == Metric::Followers);
+	CHECK(readable_metric(Platform::Kick, Metric::Viewers) == Metric::Viewers);
+	CHECK(readable_metric(Platform::Twitch, Metric::Likes) == Metric::Followers);
+	CHECK(readable_metric(Platform::YouTube, Metric::Viewers) == Metric::Likes);
+	CHECK(readable_metric(Platform::Manual, Metric::Viewers) == Metric::Likes);
+	CHECK(readable_metric(Platform::Manual, Metric::Followers) == Metric::Followers);
+}

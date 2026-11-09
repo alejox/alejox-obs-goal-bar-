@@ -50,7 +50,7 @@ set_target_properties(goal-bar-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # by the OBS adapter, so the tests can drive them with fakes.
 find_package(Threads REQUIRED)
 add_library(
-  goal-bar-providers STATIC providers/kick_account.cpp providers/kick_provider.cpp providers/twitch_account.cpp
+  goal-bar-providers STATIC providers/kick_provider.cpp providers/twitch_account.cpp
                             providers/twitch_provider.cpp providers/youtube_public_provider.cpp)
 target_link_libraries(goal-bar-providers PUBLIC goal-bar-core Threads::Threads)
 set_target_properties(goal-bar-providers PROPERTIES POSITION_INDEPENDENT_CODE ON)

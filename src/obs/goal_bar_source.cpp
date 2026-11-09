@@ -9,12 +9,10 @@
 #include "core/subscriber_rounding.hpp"
 #include "core/youtube_page.hpp"
 #include "obs/goal_actions.hpp"
-#include "obs/kick_services.hpp"
 #include "obs/provider_factory.hpp"
 #include "obs/twitch_services.hpp"
 #include "providers/twitch_provider.hpp"
 #include "render/goal_bar_painter.hpp"
-#include "ui/kick_account_dialog.hpp"
 #include "ui/twitch_connect_dialog.hpp"
 
 #include <obs-frontend-api.h>
@@ -52,8 +50,6 @@ constexpr const char *kTwitchStatusKey = "twitch_account_status";
 constexpr const char *kTwitchConnectKey = "twitch_connect";
 constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
 constexpr const char *kKickChannelKey = "kick_channel";
-constexpr const char *kKickStatusKey = "kick_account_status";
-constexpr const char *kKickAccountKey = "kick_account";
 // Bumped on every goal change made by the plugin itself (provider reading,
 // auto next goal, reset). A settings object with an older revision is a stale
 // snapshot, e.g. the one the properties dialog restores on Cancel.
@@ -175,10 +171,6 @@ std::string status_text(const MetricReading &reading)
 	case ProviderState::NotLive:
 		return obs_module_text("GoalBar.Status.Offline");
 	case ProviderState::AuthRequired:
-		if (reading.message == kKickNotSetUp)
-			return obs_module_text("GoalBar.Status.KickNotSetUp");
-		if (reading.message == kKickBadCredentials)
-			return obs_module_text("GoalBar.Status.KickRejected");
 		return obs_module_text("GoalBar.Status.AuthRequired");
 	case ProviderState::RateLimited:
 		return obs_module_text("GoalBar.Status.RateLimited");
@@ -187,6 +179,8 @@ std::string status_text(const MetricReading &reading)
 			return obs_module_text("GoalBar.Status.NeedsAffiliate");
 		if (reading.message == kKickChannelNotFound)
 			return obs_module_text("GoalBar.Status.ChannelNotFound");
+		if (reading.message == kKickBlocked)
+			return obs_module_text("GoalBar.Status.KickBlocked");
 		return obs_module_text("GoalBar.Status.Error");
 	default:
 		return obs_module_text("GoalBar.Status.Error");
@@ -261,42 +255,14 @@ GoalEvent apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSetti
 	return event;
 }
 
-// Which metrics each platform can read. Manual takes any value but viewers.
-bool metric_readable(Platform platform, Metric metric)
-{
-	switch (platform) {
-	case Platform::YouTube:
-		return metric == Metric::Likes || metric == Metric::Subscribers;
-	case Platform::Twitch:
-		return metric == Metric::Followers || metric == Metric::Subscribers;
-	case Platform::Kick:
-		return metric == Metric::Viewers || metric == Metric::Subscribers;
-	case Platform::Manual:
-		return metric != Metric::Viewers;
-	}
-	return false;
-}
-
-Metric first_metric(Platform platform)
-{
-	switch (platform) {
-	case Platform::Twitch:
-		return Metric::Followers;
-	case Platform::Kick:
-		return Metric::Viewers;
-	default:
-		return Metric::Likes;
-	}
-}
-
 // Each platform reads only some metrics; an unreadable one falls back to the
 // platform's first metric and the choice is persisted.
 ProviderKey read_provider_key(obs_data_t *settings)
 {
 	const GoalSettings decoded = decode_goal_settings(read_goal_settings(settings));
 	ProviderKey key{decoded.platform, decoded.metric, {}};
-	if (!metric_readable(key.platform, key.metric)) {
-		key.metric = first_metric(key.platform);
+	if (!platform_reads(key.platform, key.metric)) {
+		key.metric = readable_metric(key.platform, key.metric);
 		obs_data_set_string(settings, settings_key::kMetric, std::string(metric_id(key.metric)).c_str());
 	}
 	if (key.platform == Platform::YouTube)
@@ -691,7 +657,7 @@ void fill_metric_list(obs_property_t *list, Platform platform)
 							   {Metric::Subscribers, "Metric.Subscribers"},
 							   {Metric::Followers, "Metric.Followers"}};
 	for (const auto &[metric, label] : metrics) {
-		if (metric_readable(platform, metric))
+		if (platform_reads(platform, metric))
 			obs_property_list_add_string(list, obs_module_text(label),
 						     std::string(metric_id(metric)).c_str());
 	}
@@ -737,30 +703,6 @@ bool twitch_disconnect_clicked(obs_properties_t *props, obs_property_t *, void *
 	return true;
 }
 
-// Shows whether the Kick app is set up. Reads the secret store only when Kick
-// is selected.
-void update_kick_account(obs_properties_t *props, bool kick)
-{
-	obs_property_t *status = obs_properties_get(props, kKickStatusKey);
-	if (kick) {
-		const KickAccount::Status account = kick_account()->status();
-		const char *line = account.rejected     ? "GoalBar.Kick.Rejected"
-				   : account.configured ? "GoalBar.Kick.Ready"
-							: "GoalBar.Kick.NotSetUp";
-		obs_property_set_description(status, obs_module_text(line));
-	}
-	obs_property_set_visible(status, kick);
-	obs_property_set_visible(obs_properties_get(props, kKickAccountKey), kick);
-}
-
-bool kick_account_clicked(obs_properties_t *props, obs_property_t *, void *)
-{
-	auto *parent = static_cast<QWidget *>(obs_frontend_get_main_window());
-	ui::run_kick_account_dialog(parent, kick_account());
-	update_kick_account(props, true);
-	return true;
-}
-
 bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const bool subs = metric_from_id(obs_data_get_string(settings, settings_key::kMetric)) == Metric::Subscribers;
@@ -776,7 +718,6 @@ bool platform_changed(obs_properties_t *props, obs_property_t *property, obs_dat
 	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent), platform == Platform::Manual);
 	obs_property_set_visible(obs_properties_get(props, kKickChannelKey), platform == Platform::Kick);
 	update_twitch_account(props, platform == Platform::Twitch);
-	update_kick_account(props, platform == Platform::Kick);
 	fill_metric_list(obs_properties_get(props, settings_key::kMetric), selected_platform(settings));
 	return metric_changed(props, property, settings);
 }
@@ -825,9 +766,6 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_properties_add_button2(props, kTwitchDisconnectKey, obs_module_text("GoalBar.Twitch.Disconnect"),
 				   twitch_disconnect_clicked, nullptr);
 	obs_properties_add_text(props, kKickChannelKey, obs_module_text("GoalBar.Kick.Channel"), OBS_TEXT_DEFAULT);
-	obs_properties_add_text(props, kKickStatusKey, obs_module_text("GoalBar.Kick.NotSetUp"), OBS_TEXT_INFO);
-	obs_properties_add_button2(props, kKickAccountKey, obs_module_text("GoalBar.Kick.Account"),
-				   kick_account_clicked, nullptr);
 	obs_properties_add_text(props, kTitleKey, obs_module_text("GoalBar.Title"), OBS_TEXT_DEFAULT);
 	add_metric_list(props);
 	obs_properties_add_text(props, kSubsNoticeKey, obs_module_text("GoalBar.SubsNotice"), OBS_TEXT_INFO);

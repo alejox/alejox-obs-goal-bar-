@@ -1,42 +1,19 @@
 #include "providers/kick_provider.hpp"
 
+#include "core/poll_schedule.hpp"
 #include "providers/provider_state_name.hpp"
 
-#include <algorithm>
 #include <utility>
 
 namespace goalbar {
-namespace {
 
-MetricReading reading_with(ProviderState state, std::string message = {})
-{
-	MetricReading reading;
-	reading.state = state;
-	reading.message = std::move(message);
-	return reading;
-}
-
-} // namespace
-
-std::chrono::seconds kick_next_delay(ProviderState state, unsigned failures, std::chrono::seconds interval,
-				     std::chrono::seconds auth_recheck, std::optional<std::chrono::seconds> retry_after)
-{
-	if (state == ProviderState::AuthRequired)
-		return auth_recheck;
-	std::chrono::seconds delay = next_poll_delay(interval, failures);
-	if (retry_after)
-		delay = std::min(std::max(delay, *retry_after), kMaxBackoff);
-	return delay;
-}
-
-KickProvider::KickProvider(std::shared_ptr<KickApiClient> client, std::string slug, Metric metric, Logger log,
-			   std::chrono::seconds interval, std::chrono::seconds auth_recheck)
-	: client_(std::move(client)),
+KickProvider::KickProvider(KickFetch fetch, std::string slug, Metric metric, Logger log,
+			   std::chrono::seconds interval)
+	: fetch_(std::move(fetch)),
 	  slug_(std::move(slug)),
 	  metric_(metric),
 	  log_(std::move(log)),
-	  interval_(interval),
-	  auth_recheck_(auth_recheck)
+	  interval_(interval)
 {
 	reading_.state = ProviderState::Connecting;
 	worker_ = std::thread([this] { run(); });
@@ -70,51 +47,16 @@ MetricReading KickProvider::latest() const
 	return reading_;
 }
 
-KickProvider::Poll KickProvider::poll_once()
+MetricReading KickProvider::poll_once()
 {
-	const KickResponse response = client_->get(kick_channel_url(slug_), cancel_);
-	Poll poll;
-	poll.retry_after = response.retry_after;
-	switch (response.outcome) {
-	case KickOutcome::NotSetUp:
-		poll.reading = reading_with(ProviderState::AuthRequired, kKickNotSetUp);
-		return poll;
-	case KickOutcome::BadCredentials:
-		poll.reading = reading_with(ProviderState::AuthRequired, kKickBadCredentials);
-		return poll;
-	case KickOutcome::RateLimited:
-		poll.reading = reading_with(ProviderState::RateLimited, "Kick rate limit");
-		return poll;
-	case KickOutcome::Failed:
-		poll.reading = reading_with(ProviderState::Error,
-					    response.http.error.empty() ? "no response" : response.http.error);
-		return poll;
-	case KickOutcome::Ok:
-		break;
+	const HttpResult response = fetch_(kick_channel_url(slug_), cancel_);
+	if (response.status == 0) {
+		MetricReading reading;
+		reading.state = ProviderState::Error;
+		reading.message = response.error.empty() ? "no response" : response.error;
+		return reading;
 	}
-
-	const int status = response.http.status;
-	if (status == 429) {
-		poll.reading = reading_with(ProviderState::RateLimited, "Kick rate limit");
-		return poll;
-	}
-	if (status == 404) {
-		poll.reading = reading_with(ProviderState::Error, kKickChannelNotFound);
-		return poll;
-	}
-	if (status < 200 || status >= 300) {
-		poll.reading = reading_with(ProviderState::Error, "HTTP " + std::to_string(status));
-		return poll;
-	}
-	const KickChannelLookup lookup = parse_kick_channels(response.http.body, slug_);
-	if (lookup.status == KickChannelStatus::NotFound || !lookup.channel) {
-		poll.reading = reading_with(ProviderState::Error, lookup.status == KickChannelStatus::NotFound
-									  ? kKickChannelNotFound
-									  : "unexpected answer from Kick");
-		return poll;
-	}
-	poll.reading = kick_metric_reading(*lookup.channel, metric_);
-	return poll;
+	return kick_metric_reading(parse_kick_channel(response.status, response.body), metric_);
 }
 
 void KickProvider::publish(MetricReading reading)
@@ -144,14 +86,13 @@ void KickProvider::run()
 			if (stop_)
 				return;
 		}
-		Poll poll = poll_once();
-		const ProviderState state = poll.reading.state;
+		MetricReading reading = poll_once();
+		const ProviderState state = reading.state;
 		const bool failed = state == ProviderState::Error || state == ProviderState::RateLimited;
 		failures = failed ? failures + 1 : 0;
-		publish(std::move(poll.reading));
+		publish(std::move(reading));
 
-		const std::chrono::seconds delay =
-			kick_next_delay(state, failures, interval_, auth_recheck_, poll.retry_after);
+		const std::chrono::seconds delay = next_poll_delay(interval_, failures);
 		std::unique_lock lock(mutex_);
 		if (wake_.wait_for(lock, delay, [this] { return stop_; }))
 			return;
