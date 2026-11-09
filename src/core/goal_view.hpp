@@ -15,6 +15,8 @@ struct GoalView {
 	bool reached = false;    // current value is at or above the target
 };
 
-GoalView build_goal_view(const GoalSettings &settings, const std::string &title);
+// `status` is a short provider note ("Offline", "Connecting…"). When not empty
+// it is appended to the value label, so the last known value stays visible.
+GoalView build_goal_view(const GoalSettings &settings, const std::string &title, const std::string &status = {});
 
 } // namespace goalbar

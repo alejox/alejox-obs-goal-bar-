@@ -48,3 +48,16 @@ TEST_CASE(view_is_not_reached_after_a_drop_below_target)
 	const GoalView view = build_goal_view(settings_with(Goal{0, 10, 8, true}), "");
 	CHECK(!view.reached);
 }
+
+TEST_CASE(view_appends_provider_status_to_the_value_label)
+{
+	const GoalView view = build_goal_view(settings_with(Goal{0, 2000, 1234, false}), "", "Offline");
+	CHECK_EQ(view.value_label, std::string("1.23K / 2K · Offline"));
+	CHECK_NEAR(view.progress, 0.617, 1e-9);
+}
+
+TEST_CASE(view_without_status_keeps_the_plain_label)
+{
+	const GoalView view = build_goal_view(settings_with(Goal{0, 2000, 1234, false}), "", "");
+	CHECK_EQ(view.value_label, std::string("1.23K / 2K"));
+}

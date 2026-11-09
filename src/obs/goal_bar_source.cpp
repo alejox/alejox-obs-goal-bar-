@@ -3,6 +3,9 @@
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
 #include "core/style_preset.hpp"
+#include "core/subscriber_rounding.hpp"
+#include "core/youtube_page.hpp"
+#include "obs/provider_factory.hpp"
 #include "render/goal_bar_painter.hpp"
 
 #include <obs-module.h>
@@ -14,7 +17,9 @@
 #include <atomic>
 #include <climits>
 #include <cstdint>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 
 namespace goalbar::obs {
@@ -30,6 +35,8 @@ constexpr const char *kTextColorKey = "text_color";
 constexpr const char *kWidthKey = "width";
 constexpr const char *kHeightKey = "height";
 constexpr const char *kResetKey = "reset_goal";
+constexpr const char *kChannelKey = "youtube_channel";
+constexpr const char *kSubsNoticeKey = "youtube_subs_notice";
 
 constexpr long long kDefaultWidth = 800;
 constexpr long long kDefaultHeight = 120;
@@ -39,6 +46,18 @@ constexpr long long kDefaultTextColor = 0xFFFFFFFF;
 constexpr const char *kIntGoalKeys[] = {settings_key::kStart, settings_key::kTarget, settings_key::kCurrent,
 					settings_key::kStep};
 
+// What selects the metric provider. A change replaces the provider.
+struct ProviderKey {
+	Platform platform = Platform::Manual;
+	Metric metric = Metric::Likes;
+	std::string channel_url; // canonical, empty when invalid
+
+	bool operator==(const ProviderKey &other) const
+	{
+		return platform == other.platform && metric == other.metric && channel_url == other.channel_url;
+	}
+};
+
 struct GoalBarSource {
 	obs_source_t *source = nullptr;
 
@@ -46,6 +65,16 @@ struct GoalBarSource {
 	std::mutex update_mutex;
 	GoalSettings goal;
 	bool has_goal = false;
+	std::string title;
+	std::string status; // localized provider note, empty when live or manual
+	render::BarStyle style;
+
+	// Provider plus the last reading applied from it (video_tick).
+	std::mutex provider_mutex;
+	std::unique_ptr<MetricProvider> provider;
+	ProviderKey provider_key;
+	std::optional<uint64_t> applied_value;
+	ProviderState applied_state = ProviderState::Idle;
 
 	// Hand-off to the graphics thread.
 	std::mutex image_mutex;
@@ -97,42 +126,177 @@ uint32_t read_dimension(obs_data_t *settings, const char *key, long long fallbac
 	return static_cast<uint32_t>(std::clamp(value > 0 ? value : fallback, 16LL, 4096LL));
 }
 
-// Applies goal bookkeeping for a settings change and persists the fired flag.
+bool is_youtube_subscribers(const GoalSettings &settings)
+{
+	return settings.platform == Platform::YouTube && settings.metric == Metric::Subscribers;
+}
+
+std::string status_text(const MetricReading &reading)
+{
+	switch (reading.state) {
+	case ProviderState::Live:
+		return reading.value ? std::string() : obs_module_text("GoalBar.Status.Hidden");
+	case ProviderState::Connecting:
+		return obs_module_text("GoalBar.Status.Connecting");
+	case ProviderState::NotLive:
+		return obs_module_text("GoalBar.Status.Offline");
+	default:
+		return obs_module_text("GoalBar.Status.Error");
+	}
+}
+
+// Paints the current goal and hands the frame to the graphics thread.
+// Caller holds update_mutex.
+void repaint_locked(GoalBarSource &self)
+{
+	const uint32_t width = self.width;
+	const uint32_t height = self.height;
+	const GoalView view = build_goal_view(self.goal, self.title, self.status);
+	QImage image = render::GoalBarPainter::paint(view, self.style, QSize(int(width), int(height)),
+						     QString::fromUtf8(obs_module_text("GoalBar.Reached")));
+
+	std::lock_guard image_lock(self.image_mutex);
+	self.image = std::move(image);
+	self.image_dirty = true;
+}
+
+void log_if_reached(GoalEvent event, const Goal &goal)
+{
+	if (event == GoalEvent::GoalReached)
+		obs_log(LOG_INFO, "goal reached (%llu / %llu)", static_cast<unsigned long long>(goal.current),
+			static_cast<unsigned long long>(goal.target));
+}
+
+// Applies goal bookkeeping for a settings change and persists what it changed.
 void apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSettings &next)
 {
 	const bool persisted_fired = next.goal.reached_fired;
+	if (is_youtube_subscribers(next)) {
+		// YouTube rounds subscriber counts, so only aligned targets are reachable.
+		const uint64_t aligned = align_target_to_step(next.goal.target, next.goal.current);
+		if (aligned != next.goal.target) {
+			next.goal.target = aligned;
+			obs_data_set_int(settings, settings_key::kTarget, to_obs_int(aligned));
+		}
+	}
 	if (self.has_goal && next.goal.target != self.goal.goal.target)
 		next.goal.set_target(next.goal.target);
 
-	if (next.goal.apply(next.goal.current) == GoalEvent::GoalReached)
-		obs_log(LOG_INFO, "goal reached (%llu / %llu)", static_cast<unsigned long long>(next.goal.current),
-			static_cast<unsigned long long>(next.goal.target));
+	log_if_reached(next.goal.apply(next.goal.current), next.goal);
 
 	if (next.goal.reached_fired != persisted_fired)
 		obs_data_set_bool(settings, settings_key::kReachedFired, next.goal.reached_fired);
 }
 
+// YouTube has no followers metric: fall back to likes and persist the choice.
+ProviderKey read_provider_key(obs_data_t *settings)
+{
+	const GoalSettings decoded = decode_goal_settings(read_goal_settings(settings));
+	ProviderKey key{decoded.platform, decoded.metric, {}};
+	if (key.platform != Platform::YouTube)
+		return key;
+	if (key.metric == Metric::Followers) {
+		key.metric = Metric::Likes;
+		obs_data_set_string(settings, settings_key::kMetric, std::string(metric_id(key.metric)).c_str());
+	}
+	key.channel_url = normalize_youtube_channel(obs_data_get_string(settings, kChannelKey)).value_or("");
+	return key;
+}
+
+// Swaps in a provider for `key`. Returns the initial status text, or nullopt
+// when the key did not change. The old provider is joined outside the lock.
+std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderKey &key)
+{
+	std::unique_ptr<MetricProvider> old;
+	std::string status;
+	{
+		std::lock_guard lock(self.provider_mutex);
+		if (self.provider_key == key)
+			return std::nullopt;
+		std::unique_ptr<MetricProvider> next;
+		if (key.platform == Platform::YouTube && !key.channel_url.empty())
+			next = make_youtube_provider(key.channel_url, key.metric);
+		if (key.platform == Platform::YouTube)
+			status = next ? obs_module_text("GoalBar.Status.Connecting")
+				      : obs_module_text("GoalBar.Status.NoChannel");
+		old = std::move(self.provider);
+		self.provider = std::move(next);
+		self.provider_key = key;
+		self.applied_value.reset();
+		self.applied_state = ProviderState::Idle;
+	}
+	if (old || key.platform == Platform::YouTube)
+		obs_log(LOG_INFO, "metric provider: %s",
+			key.platform == Platform::YouTube ? (key.channel_url.empty() ? "YouTube (no channel)"
+										     : key.channel_url.c_str())
+							  : "manual");
+	return status;
+}
+
 void goal_bar_update(void *data, obs_data_t *settings)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
-	std::lock_guard update_lock(self->update_mutex);
+	const std::optional<std::string> provider_status = replace_provider(*self, read_provider_key(settings));
 
+	std::lock_guard update_lock(self->update_mutex);
 	GoalSettings next = decode_goal_settings(read_goal_settings(settings));
 	apply_goal_change(*self, settings, next);
 	self->goal = next;
 	self->has_goal = true;
+	if (provider_status)
+		self->status = *provider_status;
+	self->title = obs_data_get_string(settings, kTitleKey);
+	self->style = read_style(settings);
+	self->width = read_dimension(settings, kWidthKey, kDefaultWidth);
+	self->height = read_dimension(settings, kHeightKey, kDefaultHeight);
+	repaint_locked(*self);
+}
 
-	const uint32_t width = read_dimension(settings, kWidthKey, kDefaultWidth);
-	const uint32_t height = read_dimension(settings, kHeightKey, kDefaultHeight);
-	const GoalView view = build_goal_view(next, obs_data_get_string(settings, kTitleKey));
-	QImage image = render::GoalBarPainter::paint(view, read_style(settings), QSize(int(width), int(height)),
-						     QString::fromUtf8(obs_module_text("GoalBar.Reached")));
+// Persists the values a provider reading changed. Never calls obs_source_update.
+void persist_goal(obs_source_t *source, const Goal &goal)
+{
+	obs_data_t *settings = obs_source_get_settings(source);
+	obs_data_set_int(settings, settings_key::kCurrent, to_obs_int(goal.current));
+	obs_data_set_int(settings, settings_key::kTarget, to_obs_int(goal.target));
+	obs_data_set_bool(settings, settings_key::kReachedFired, goal.reached_fired);
+	obs_data_release(settings);
+}
 
-	std::lock_guard image_lock(self->image_mutex);
-	self->image = std::move(image);
-	self->image_dirty = true;
-	self->width = width;
-	self->height = height;
+void apply_reading(GoalBarSource &self, const MetricReading &reading)
+{
+	std::lock_guard update_lock(self.update_mutex);
+	self.status = status_text(reading);
+	const bool has_new_value = reading.value && *reading.value != self.goal.goal.current;
+	if (has_new_value) {
+		Goal &goal = self.goal.goal;
+		if (is_youtube_subscribers(self.goal)) {
+			// Re-arms only when the aligned target moves above the value.
+			const uint64_t aligned = align_target_to_step(goal.target, *reading.value);
+			if (aligned != goal.target)
+				goal.set_target(aligned);
+		}
+		log_if_reached(goal.apply(*reading.value), goal);
+		persist_goal(self.source, goal);
+	}
+	repaint_locked(self);
+}
+
+// Video thread: cheap check for a new provider reading.
+void goal_bar_tick(void *data, float)
+{
+	auto *self = static_cast<GoalBarSource *>(data);
+	MetricReading reading;
+	{
+		std::lock_guard lock(self->provider_mutex);
+		if (!self->provider)
+			return;
+		reading = self->provider->latest();
+		if (reading.value == self->applied_value && reading.state == self->applied_state)
+			return;
+		self->applied_value = reading.value;
+		self->applied_state = reading.state;
+	}
+	apply_reading(*self, reading);
 }
 
 // Graphics thread: uploads the latest painted frame, if any.
@@ -215,6 +379,12 @@ void *goal_bar_create(obs_data_t *settings, obs_source_t *source)
 void goal_bar_destroy(void *data)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
+	{
+		// Join the provider's worker before anything else goes away.
+		std::unique_ptr<MetricProvider> provider;
+		std::lock_guard lock(self->provider_mutex);
+		provider = std::move(self->provider);
+	}
 	obs_enter_graphics();
 	gs_texture_destroy(self->texture);
 	obs_leave_graphics();
@@ -243,6 +413,7 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_string(settings, settings_key::kMetric, std::string(metric_id(defaults.metric)).c_str());
 	obs_data_set_default_string(settings, settings_key::kPlatform,
 				    std::string(platform_id(defaults.platform)).c_str());
+	obs_data_set_default_string(settings, kChannelKey, "");
 	obs_data_set_default_string(settings, kStyleKey, std::string(style_preset_id(StylePreset::Minimal)).c_str());
 	obs_data_set_default_int(settings, kAccentKey, kDefaultAccent);
 	obs_data_set_default_int(settings, kTextColorKey, kDefaultTextColor);
@@ -250,15 +421,59 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, kHeightKey, kDefaultHeight);
 }
 
-void add_metric_list(obs_properties_t *props)
+Platform selected_platform(obs_data_t *settings)
 {
-	obs_property_t *list = obs_properties_add_list(props, settings_key::kMetric, obs_module_text("GoalBar.Metric"),
-						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	return platform_from_id(obs_data_get_string(settings, settings_key::kPlatform)).value_or(Platform::Manual);
+}
+
+// Fills the metric list with the metrics `platform` can read.
+void fill_metric_list(obs_property_t *list, Platform platform)
+{
+	obs_property_list_clear(list);
 	const std::pair<Metric, const char *> metrics[] = {{Metric::Likes, "Metric.Likes"},
 							   {Metric::Subscribers, "Metric.Subscribers"},
 							   {Metric::Followers, "Metric.Followers"}};
 	for (const auto &[metric, label] : metrics)
-		obs_property_list_add_string(list, obs_module_text(label), std::string(metric_id(metric)).c_str());
+		if (platform != Platform::YouTube || metric != Metric::Followers)
+			obs_property_list_add_string(list, obs_module_text(label),
+						     std::string(metric_id(metric)).c_str());
+}
+
+bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const bool subs = metric_from_id(obs_data_get_string(settings, settings_key::kMetric)) == Metric::Subscribers;
+	obs_property_set_visible(obs_properties_get(props, kSubsNoticeKey),
+				 subs && selected_platform(settings) == Platform::YouTube);
+	return true;
+}
+
+bool platform_changed(obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
+{
+	const bool youtube = selected_platform(settings) == Platform::YouTube;
+	obs_property_set_visible(obs_properties_get(props, kChannelKey), youtube);
+	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent), !youtube);
+	fill_metric_list(obs_properties_get(props, settings_key::kMetric), selected_platform(settings));
+	return metric_changed(props, property, settings);
+}
+
+void add_platform_list(obs_properties_t *props)
+{
+	obs_property_t *list = obs_properties_add_list(props, settings_key::kPlatform,
+						       obs_module_text("GoalBar.Platform"), OBS_COMBO_TYPE_LIST,
+						       OBS_COMBO_FORMAT_STRING);
+	const std::pair<Platform, const char *> platforms[] = {{Platform::Manual, "Platform.Manual"},
+							       {Platform::YouTube, "Platform.YouTube"}};
+	for (const auto &[platform, label] : platforms)
+		obs_property_list_add_string(list, obs_module_text(label), std::string(platform_id(platform)).c_str());
+	obs_property_set_modified_callback(list, platform_changed);
+}
+
+void add_metric_list(obs_properties_t *props)
+{
+	obs_property_t *list = obs_properties_add_list(props, settings_key::kMetric, obs_module_text("GoalBar.Metric"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	fill_metric_list(list, Platform::Manual);
+	obs_property_set_modified_callback(list, metric_changed);
 }
 
 void add_style_list(obs_properties_t *props)
@@ -275,8 +490,11 @@ void add_style_list(obs_properties_t *props)
 obs_properties_t *goal_bar_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
+	add_platform_list(props);
+	obs_properties_add_text(props, kChannelKey, obs_module_text("GoalBar.Channel"), OBS_TEXT_DEFAULT);
 	obs_properties_add_text(props, kTitleKey, obs_module_text("GoalBar.Title"), OBS_TEXT_DEFAULT);
 	add_metric_list(props);
+	obs_properties_add_text(props, kSubsNoticeKey, obs_module_text("GoalBar.SubsNotice"), OBS_TEXT_INFO);
 	obs_properties_add_int(props, settings_key::kCurrent, obs_module_text("GoalBar.Current"), 0, INT_MAX, 1);
 	obs_properties_add_int(props, settings_key::kTarget, obs_module_text("GoalBar.Target"), 1, INT_MAX, 1);
 	add_style_list(props);
@@ -304,6 +522,7 @@ void register_goal_bar_source()
 	info.get_properties = goal_bar_properties;
 	info.get_width = goal_bar_width;
 	info.get_height = goal_bar_height;
+	info.video_tick = goal_bar_tick;
 	info.video_render = goal_bar_render;
 	info.icon_type = OBS_ICON_TYPE_TEXT;
 	obs_register_source(&info);
