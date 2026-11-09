@@ -28,8 +28,17 @@ jobs:
           path: .deps
           key: deps-windows-x64-${{ hashFiles('buildspec.json', 'cmake/common/buildspec_common.cmake', 'cmake/windows/buildspec.cmake') }}
 
+      # Configure downloads OBS sources and obs-deps from GitHub; retry transient HTTP errors.
       - name: Configure
-        run: cmake --preset windows-x64
+        run: |
+          foreach ($attempt in 1..3) {
+            cmake --preset windows-x64
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "Configure attempt $attempt failed; retrying in 30 s"
+            Remove-Item -Recurse -Force build_windows -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 30
+          }
+          exit 1
 
       # Saved right after configure, which builds libobs, so that a plugin compile error
       # does not throw away the slowest step of the job.
@@ -94,8 +103,16 @@ jobs:
             libcurl4-openssl-dev libsecret-1-dev libsimde-dev ninja-build obs-studio pkg-config qt6-base-dev
           dpkg-query --show obs-studio
 
+      # Configure downloads nlohmann/json from GitHub; retry transient HTTP errors.
       - name: Configure
-        run: cmake --preset linux-x86_64
+        run: |
+          for attempt in 1 2 3; do
+            cmake --preset linux-x86_64 && exit 0
+            echo "Configure attempt $attempt failed; retrying in 30 s"
+            rm -rf build_linux
+            sleep 30
+          done
+          exit 1
 
       - name: Build
         run: cmake --build --preset linux-x86_64
