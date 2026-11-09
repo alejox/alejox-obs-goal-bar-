@@ -32,3 +32,8 @@ function(add_core_test name)
 endfunction()
 
 add_core_test(version_test core/version_test.cpp)
+add_core_test(metric_test core/metric_test.cpp)
+add_core_test(goal_test core/goal_test.cpp)
+add_core_test(subscriber_rounding_test core/subscriber_rounding_test.cpp)
+add_core_test(manual_provider_test core/manual_provider_test.cpp)
+add_core_test(goal_settings_test core/goal_settings_test.cpp)
