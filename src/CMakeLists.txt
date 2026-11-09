@@ -9,7 +9,10 @@ string(JSON goal_bar_version GET "${goal_bar_buildspec}" version)
 include(FetchContent)
 FetchContent_Declare(
   nlohmann_json_header
+  # Same file at the same tag; CMake tries the URLs in order, so a GitHub release
+  # download outage falls back to raw.githubusercontent.com.
   URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.hpp
+      https://raw.githubusercontent.com/nlohmann/json/v3.12.0/single_include/nlohmann/json.hpp
   URL_HASH SHA256=aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63
   DOWNLOAD_NO_EXTRACT TRUE
 )
