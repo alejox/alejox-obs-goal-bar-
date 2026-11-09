@@ -76,7 +76,8 @@ std::vector<ActionCommand> ActionSequence::finish_if_done()
 
 bool ActionSequence::source_time_over() const
 {
-	return elapsed_ >= (plan_.source_is_media ? kMaxMediaSeconds : plan_.show_seconds);
+	const bool until_media_end = plan_.source_is_media && !plan_.source_loops;
+	return elapsed_ >= (until_media_end ? kMaxMediaSeconds : plan_.show_seconds);
 }
 
 } // namespace goalbar

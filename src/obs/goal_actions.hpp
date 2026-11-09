@@ -34,7 +34,8 @@ void add_action_properties(obs_properties_t *props, obs_source_t *owner, obs_pro
 class GoalActions {
 public:
 	explicit GoalActions(obs_source_t *owner);
-	// Disconnects signals. A source shown at that moment stays visible.
+	// Disconnects signals and hides a source shown at that moment (skipped
+	// while OBS shuts down).
 	~GoalActions();
 
 	GoalActions(const GoalActions &) = delete;

@@ -40,6 +40,7 @@ target_sources(
     src/plugin_main.cpp
     src/obs/goal_actions.cpp
     src/obs/goal_bar_source.cpp
+    src/obs/obs_shutdown.cpp
     src/obs/provider_factory.cpp
     src/obs/twitch_services.cpp
     src/render/goal_bar_painter.cpp

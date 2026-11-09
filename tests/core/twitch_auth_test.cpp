@@ -62,6 +62,7 @@ TEST_CASE(token_answers_parse_success_and_errors)
 	REQUIRE(ok.tokens.has_value());
 	CHECK_EQ(ok.tokens->access_token, std::string("a1"));
 	CHECK_EQ(ok.tokens->refresh_token, std::string("r1"));
+	CHECK_EQ(ok.tokens->expires_in.count(), 14400);
 	CHECK_EQ(ok.error, TwitchTokenError::None);
 
 	CHECK_EQ(parse_twitch_token_response(400, R"({"status":400,"message":"authorization_pending"})").error,
@@ -111,7 +112,7 @@ TEST_CASE(device_flow_ends_on_success_denial_and_expiry)
 	TwitchDeviceFlow flow(device_code(60s), t0);
 
 	TwitchTokenResponse ok;
-	ok.tokens = TwitchTokens{"a", "r"};
+	ok.tokens = TwitchTokens{"a", "r", 0s};
 	CHECK_EQ(flow.on_response(ok, t0 + 5s).status, TwitchDeviceFlow::Status::Succeeded);
 	CHECK_EQ(flow.on_response(token_error(TwitchTokenError::AccessDenied), t0 + 5s).status,
 		 TwitchDeviceFlow::Status::Denied);
@@ -122,4 +123,22 @@ TEST_CASE(device_flow_ends_on_success_denial_and_expiry)
 	// Pending past the code lifetime: stop instead of polling a dead code.
 	CHECK_EQ(flow.on_response(token_error(TwitchTokenError::AuthorizationPending), t0 + 58s).status,
 		 TwitchDeviceFlow::Status::Expired);
+}
+
+TEST_CASE(token_lifetime_is_optional)
+{
+	const TwitchTokenResponse ok = parse_twitch_token_response(200, R"({"access_token":"a","refresh_token":"r"})");
+	REQUIRE(ok.tokens.has_value());
+	CHECK_EQ(ok.tokens->expires_in.count(), 0);
+}
+
+TEST_CASE(refresh_deadline_leaves_a_minute_of_margin)
+{
+	const auto t0 = std::chrono::steady_clock::time_point{};
+	CHECK(!twitch_refresh_deadline(t0, 0s).has_value()); // unknown lifetime: rely on 401
+	const auto deadline = twitch_refresh_deadline(t0, 14400s);
+	REQUIRE(deadline.has_value());
+	CHECK(*deadline == t0 + 14340s);
+	// Lifetimes shorter than two margins refresh at half time instead.
+	CHECK(*twitch_refresh_deadline(t0, 90s) == t0 + 45s);
 }

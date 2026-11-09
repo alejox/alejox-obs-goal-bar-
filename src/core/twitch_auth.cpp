@@ -135,7 +135,8 @@ TwitchTokenResponse parse_twitch_token_response(int status, std::string_view bod
 	}
 	const std::optional<json> object = parse_object(body);
 	if (status >= 200 && status < 300 && object) {
-		TwitchTokens tokens{string_field(*object, "access_token"), string_field(*object, "refresh_token")};
+		TwitchTokens tokens{string_field(*object, "access_token"), string_field(*object, "refresh_token"),
+				    seconds_field(*object, "expires_in", 0s)};
 		if (!tokens.access_token.empty() && !tokens.refresh_token.empty()) {
 			response.tokens = std::move(tokens);
 			return response;
@@ -183,6 +184,15 @@ TwitchDeviceFlow::Step TwitchDeviceFlow::on_response(const TwitchTokenResponse &
 	default:
 		return {Status::Failed, {}};
 	}
+}
+
+
+std::optional<std::chrono::steady_clock::time_point> twitch_refresh_deadline(std::chrono::steady_clock::time_point obtained,
+									      std::chrono::seconds expires_in)
+{
+	if (expires_in <= std::chrono::seconds::zero())
+		return std::nullopt;
+	return obtained + std::max(expires_in - kTwitchRefreshMargin, expires_in / 2);
 }
 
 } // namespace goalbar

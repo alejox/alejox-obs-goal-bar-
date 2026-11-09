@@ -20,9 +20,10 @@ constexpr const char *kClientId = "cid";
 constexpr const char *kUserJson =
 	R"({"data":[{"id":"42","login":"streamer","display_name":"Streamer","broadcaster_type":"affiliate"}]})";
 
-std::string tokens_json(const std::string &access, const std::string &refresh)
+std::string tokens_json(const std::string &access, const std::string &refresh, int expires_in = 0)
 {
-	return R"({"access_token":")" + access + R"(","refresh_token":")" + refresh + R"(","token_type":"bearer"})";
+	return R"({"access_token":")" + access + R"(","refresh_token":")" + refresh + R"(","token_type":"bearer")" +
+	       (expires_in > 0 ? R"(,"expires_in":)" + std::to_string(expires_in) : std::string()) + "}";
 }
 
 std::string header(const HttpHeaders &headers, const std::string &name)
@@ -43,6 +44,7 @@ struct FakeTwitch {
 	std::string valid_access = "none";
 	int minted = 0;
 	std::chrono::milliseconds post_delay{0};
+	int expires_in = 0; // lifetime of minted access tokens, 0 = not sent
 
 	TwitchHttp http()
 	{
@@ -71,7 +73,7 @@ struct FakeTwitch {
 				}
 				++minted;
 				valid_access = "a" + std::to_string(minted);
-				return HttpResult{200, tokens_json(valid_access, "r" + std::to_string(minted)), ""};
+				return HttpResult{200, tokens_json(valid_access, "r" + std::to_string(minted), expires_in), ""};
 			}};
 	}
 
@@ -87,6 +89,7 @@ struct Fixture {
 	InMemorySecretStore *secrets = nullptr;
 	std::vector<std::chrono::seconds> sleeps;
 	bool sleep_result = true;
+	TwitchAccount::Clock::time_point now{};
 	std::unique_ptr<TwitchAccount> account;
 
 	explicit Fixture(const std::string &stored_refresh = {})
@@ -101,7 +104,7 @@ struct Fixture {
 				sleeps.push_back(delay);
 				return sleep_result;
 			},
-			[] { return TwitchAccount::Clock::time_point{}; });
+			[this] { return now; });
 	}
 
 	std::string stored(const char *key) { return secrets->get(key).secret.value_or(""); }
@@ -268,4 +271,23 @@ TEST_CASE(real_sleep_returns_early_on_cancel)
 	CHECK(std::chrono::steady_clock::now() - start < 1s);
 	canceller.join();
 	CHECK(!sleep_unless_cancelled(1s, cancel));
+}
+
+TEST_CASE(access_token_is_refreshed_shortly_before_it_expires)
+{
+	Fixture fx("r0");
+	fx.twitch.expires_in = 3600;
+	CancelToken cancel;
+	CHECK_EQ(fx.account->get(helix_users_url(), cancel).http.status, 200);
+	CHECK_EQ(fx.twitch.posts(), size_t{1});
+
+	fx.now += 3600s - 61s; // still more than a minute left
+	CHECK_EQ(fx.account->get(helix_users_url(), cancel).http.status, 200);
+	CHECK_EQ(fx.twitch.posts(), size_t{1});
+
+	fx.now += 2s; // inside the last minute: refresh first, no 401 round trip
+	CHECK_EQ(fx.account->get(helix_users_url(), cancel).http.status, 200);
+	CHECK_EQ(fx.twitch.posts(), size_t{2});
+	CHECK_EQ(fx.twitch.get_urls.size(), size_t{3});
+	CHECK_EQ(fx.stored(TwitchAccount::kRefreshTokenKey), std::string("r2"));
 }

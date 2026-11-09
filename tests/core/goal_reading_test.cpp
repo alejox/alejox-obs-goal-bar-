@@ -67,3 +67,33 @@ TEST_CASE(update_crossing_the_target_fires_once)
 	CHECK_EQ(goal.target, uint64_t{100});
 	CHECK_EQ(apply_metric_value(goal, 110, ReadingKind::Update, 100).event, GoalEvent::None);
 }
+
+TEST_CASE(reset_below_target_restarts_from_the_current_value)
+{
+	Goal goal{0, 100, 40, false};
+	reset_goal(goal, 100);
+	CHECK_EQ(goal.start, uint64_t{40});
+	CHECK_EQ(goal.target, uint64_t{100});
+	CHECK(!goal.reached_fired);
+	CHECK_EQ(apply_metric_value(goal, 100, ReadingKind::Update, 100).event, GoalEvent::GoalReached);
+}
+
+TEST_CASE(reset_at_or_above_target_marks_reached_silently)
+{
+	Goal goal{0, 100, 150, true};
+	reset_goal(goal, 0);
+	CHECK_EQ(goal.start, uint64_t{150});
+	CHECK_EQ(goal.target, uint64_t{100});
+	CHECK(goal.reached_fired); // never re-fires the actions
+	CHECK_EQ(apply_metric_value(goal, 160, ReadingKind::Update, 0).event, GoalEvent::None);
+}
+
+TEST_CASE(reset_above_target_with_auto_next_advances_silently)
+{
+	Goal goal{0, 100, 350, true};
+	reset_goal(goal, 100);
+	CHECK_EQ(goal.start, uint64_t{350}); // starts over from the current value
+	CHECK_EQ(goal.target, uint64_t{400});
+	CHECK(!goal.reached_fired);
+	CHECK_EQ(apply_metric_value(goal, 400, ReadingKind::Update, 100).event, GoalEvent::GoalReached);
+}

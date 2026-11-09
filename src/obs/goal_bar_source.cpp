@@ -3,6 +3,7 @@
 #include "core/goal_reading.hpp"
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
+#include "core/progress_tween.hpp"
 #include "core/style_preset.hpp"
 #include "core/subscriber_rounding.hpp"
 #include "core/youtube_page.hpp"
@@ -47,6 +48,12 @@ constexpr const char *kSubsNoticeKey = "youtube_subs_notice";
 constexpr const char *kTwitchStatusKey = "twitch_account_status";
 constexpr const char *kTwitchConnectKey = "twitch_connect";
 constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
+// Bumped on every goal change made by the plugin itself (provider reading,
+// auto next goal, reset). A settings object with an older revision is a stale
+// snapshot, e.g. the one the properties dialog restores on Cancel.
+constexpr const char *kRevisionKey = "goal_revision";
+constexpr const char *kTestHotkeyName = "goal_bar.test_celebration";
+constexpr const char *kResetHotkeyName = "goal_bar.reset_goal";
 
 constexpr long long kDefaultWidth = 800;
 constexpr long long kDefaultHeight = 120;
@@ -80,6 +87,8 @@ struct GoalBarSource {
 	render::BarStyle style;
 	bool auto_next = true;
 	std::optional<CelebrationFrame> celebration; // drawn while set
+	ProgressTween fill;     // the fill shown on screen, gliding to the goal progress
+	long long revision = 0; // see kRevisionKey
 
 	// Goal-reached side effects; outlives every call into this source.
 	std::unique_ptr<GoalActions> actions;
@@ -103,6 +112,9 @@ struct GoalBarSource {
 	gs_texture_t *texture = nullptr;
 	uint32_t texture_width = 0;
 	uint32_t texture_height = 0;
+
+	obs_hotkey_id test_hotkey = OBS_INVALID_HOTKEY_ID;
+	obs_hotkey_id reset_hotkey = OBS_INVALID_HOTKEY_ID;
 };
 
 long long to_obs_int(uint64_t value)
@@ -172,7 +184,8 @@ void repaint_locked(GoalBarSource &self)
 {
 	const uint32_t width = self.width;
 	const uint32_t height = self.height;
-	const GoalView view = build_goal_view(self.goal, self.title, self.status);
+	GoalView view = build_goal_view(self.goal, self.title, self.status);
+	view.progress = self.fill.value(); // the label shows the new value at once
 	QImage image = render::GoalBarPainter::paint(view, self.style, QSize(int(width), int(height)),
 						     QString::fromUtf8(obs_module_text("GoalBar.Reached")),
 						     self.celebration ? &*self.celebration : nullptr);
@@ -187,6 +200,27 @@ void log_if_reached(GoalEvent event, const Goal &goal)
 	if (event == GoalEvent::GoalReached)
 		obs_log(LOG_INFO, "goal reached (%llu / %llu)", static_cast<unsigned long long>(goal.current),
 			static_cast<unsigned long long>(goal.target));
+}
+
+// Writes the runtime goal into `settings`. Caller holds update_mutex.
+void write_goal(obs_data_t *settings, const GoalBarSource &self)
+{
+	const Goal &goal = self.goal.goal;
+	obs_data_set_int(settings, settings_key::kStart, to_obs_int(goal.start));
+	obs_data_set_int(settings, settings_key::kCurrent, to_obs_int(goal.current));
+	obs_data_set_int(settings, settings_key::kTarget, to_obs_int(goal.target));
+	obs_data_set_bool(settings, settings_key::kReachedFired, goal.reached_fired);
+	obs_data_set_int(settings, kRevisionKey, self.revision);
+}
+
+// Persists a goal change made by the plugin itself and bumps the revision.
+// Never calls obs_source_update. Caller holds update_mutex.
+void persist_goal(GoalBarSource &self)
+{
+	++self.revision;
+	obs_data_t *settings = obs_source_get_settings(self.source);
+	write_goal(settings, self);
+	obs_data_release(settings);
 }
 
 // Applies goal bookkeeping for a settings change and persists what it changed.
@@ -281,7 +315,17 @@ void goal_bar_update(void *data, obs_data_t *settings)
 
 	std::lock_guard update_lock(self->update_mutex);
 	GoalSettings next = decode_goal_settings(read_goal_settings(settings));
-	const GoalEvent event = apply_goal_change(*self, settings, next);
+	const long long revision = obs_data_get_int(settings, kRevisionKey);
+	GoalEvent event = GoalEvent::None;
+	if (self->has_goal && revision < self->revision) {
+		// A stale snapshot (properties Cancel): the runtime goal wins and the
+		// settings get it back. Everything else in the snapshot applies.
+		next.goal = self->goal.goal;
+		write_goal(settings, *self);
+	} else {
+		event = apply_goal_change(*self, settings, next);
+		self->revision = std::max(self->revision, revision);
+	}
 	const ActionSettings actions = read_action_settings(settings);
 	self->actions->configure(actions);
 	self->auto_next = actions.auto_next;
@@ -289,6 +333,10 @@ void goal_bar_update(void *data, obs_data_t *settings)
 	if (event == GoalEvent::GoalReached && self->has_goal)
 		self->actions->trigger(false);
 	self->goal = next;
+	if (self->has_goal)
+		self->fill.retarget(next.goal.progress());
+	else
+		self->fill.jump(next.goal.progress());
 	self->has_goal = true;
 	if (provider_status)
 		self->status = *provider_status;
@@ -297,17 +345,6 @@ void goal_bar_update(void *data, obs_data_t *settings)
 	self->width = read_dimension(settings, kWidthKey, kDefaultWidth);
 	self->height = read_dimension(settings, kHeightKey, kDefaultHeight);
 	repaint_locked(*self);
-}
-
-// Persists the values a provider reading changed. Never calls obs_source_update.
-void persist_goal(obs_source_t *source, const Goal &goal)
-{
-	obs_data_t *settings = obs_source_get_settings(source);
-	obs_data_set_int(settings, settings_key::kStart, to_obs_int(goal.start));
-	obs_data_set_int(settings, settings_key::kCurrent, to_obs_int(goal.current));
-	obs_data_set_int(settings, settings_key::kTarget, to_obs_int(goal.target));
-	obs_data_set_bool(settings, settings_key::kReachedFired, goal.reached_fired);
-	obs_data_release(settings);
 }
 
 // YouTube rounds subscriber counts: keep the target on a reachable step.
@@ -333,7 +370,8 @@ void apply_reading(GoalBarSource &self, const MetricReading &reading, ReadingKin
 		const uint64_t auto_next_step = self.auto_next ? self.goal.step : 0;
 		const ReadingOutcome outcome = apply_metric_value(goal, *reading.value, kind, auto_next_step);
 		log_if_reached(outcome.event, goal);
-		persist_goal(self.source, goal);
+		persist_goal(self);
+		self.fill.retarget(goal.progress());
 		if (outcome.event == GoalEvent::GoalReached)
 			self.actions->trigger(false);
 	}
@@ -362,29 +400,40 @@ void poll_provider(GoalBarSource &self)
 	apply_reading(self, reading, kind);
 }
 
-// Moves to the next goal after a celebration. Caller holds update_mutex.
-void advance_goal_locked(GoalBarSource &self)
+// Moves to the next goal after a celebration. Returns false when there is
+// none (step 0). Caller holds update_mutex.
+bool advance_goal_locked(GoalBarSource &self)
 {
 	std::optional<Goal> next = self.goal.goal.advance(self.goal.step);
 	if (!next)
-		return;
+		return false;
 	align_subscriber_target(self.goal, *next, next->current);
 	self.goal.goal = *next;
-	persist_goal(self.source, self.goal.goal);
+	persist_goal(self);
+	self.fill.retarget(next->progress());
 	obs_log(LOG_INFO, "next goal: %llu", static_cast<unsigned long long>(next->target));
+	return true;
 }
 
-// Advances the goal actions; repaints only while celebrating.
-void run_actions(GoalBarSource &self, float seconds)
+// Advances the goal actions and the fill animation; repaints only while
+// something moves.
+void animate(GoalBarSource &self, float seconds)
 {
 	const GoalActions::Tick tick = self.actions->tick(seconds);
-	if (!tick.repaint && !tick.advance)
-		return;
-	std::lock_guard update_lock(self.update_mutex);
-	self.celebration = tick.frame;
-	if (tick.advance)
-		advance_goal_locked(self);
-	repaint_locked(self);
+	bool advanced = false;
+	{
+		std::lock_guard update_lock(self.update_mutex);
+		const bool filling = self.fill.tick(seconds);
+		if (!tick.repaint && !tick.advance && !filling)
+			return;
+		self.celebration = tick.frame;
+		if (tick.advance)
+			advanced = advance_goal_locked(self);
+		repaint_locked(self);
+	}
+	// An open properties dialog reloads and shows the new Goal value.
+	if (advanced)
+		obs_source_update_properties(self.source);
 }
 
 // Video thread.
@@ -392,7 +441,7 @@ void goal_bar_tick(void *data, float seconds)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
 	poll_provider(*self);
-	run_actions(*self, seconds);
+	animate(*self, seconds);
 }
 
 // Graphics thread: uploads the latest painted frame, if any.
@@ -439,24 +488,28 @@ void goal_bar_render(void *data, gs_effect_t *effect)
 	gs_enable_framebuffer_srgb(previous_srgb);
 }
 
+// "Reset goal" (button and hotkey): starts the goal over from the current
+// value. Never fires the goal actions, even when the value is at the target.
+void reset_goal_now(GoalBarSource &self)
+{
+	std::lock_guard update_lock(self.update_mutex);
+	Goal &goal = self.goal.goal;
+	reset_goal(goal, self.auto_next ? self.goal.step : 0);
+	align_subscriber_target(self.goal, goal, goal.current);
+	persist_goal(self);
+	self.fill.retarget(goal.progress());
+	repaint_locked(self);
+	obs_log(LOG_INFO, "goal reset (%llu / %llu)", static_cast<unsigned long long>(goal.current),
+		static_cast<unsigned long long>(goal.target));
+}
+
 bool reset_goal_clicked(obs_properties_t *, obs_property_t *, void *data)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
 	if (!self) // properties requested without a source instance
 		return false;
-	uint64_t current = 0;
-	{
-		std::lock_guard update_lock(self->update_mutex);
-		Goal goal = self->goal.goal;
-		goal.reset();
-		current = goal.start;
-	}
-	obs_data_t *changes = obs_data_create();
-	obs_data_set_int(changes, settings_key::kStart, to_obs_int(current));
-	obs_data_set_bool(changes, settings_key::kReachedFired, false);
-	obs_source_update(self->source, changes);
-	obs_data_release(changes);
-	return false;
+	reset_goal_now(*self);
+	return true; // reload the dialog: the goal may have moved
 }
 
 bool test_celebration_clicked(obs_properties_t *, obs_property_t *, void *data)
@@ -465,6 +518,41 @@ bool test_celebration_clicked(obs_properties_t *, obs_property_t *, void *data)
 	if (self) // properties requested without a source instance
 		self->actions->trigger(true);
 	return false;
+}
+
+// Hotkey thread. Hotkeys are unregistered before the source goes away.
+void test_hotkey_pressed(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+{
+	if (pressed)
+		static_cast<GoalBarSource *>(data)->actions->trigger(true);
+}
+
+void reset_hotkey_pressed(void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed)
+{
+	if (!pressed)
+		return;
+	auto *self = static_cast<GoalBarSource *>(data);
+	reset_goal_now(*self);
+	obs_source_update_properties(self->source);
+}
+
+// libobs saves the bindings with the source and restores them when the same
+// names are registered again.
+void register_hotkeys(GoalBarSource &self)
+{
+	self.test_hotkey = obs_hotkey_register_source(self.source, kTestHotkeyName,
+						      obs_module_text("GoalBar.Hotkey.Test"), test_hotkey_pressed,
+						      &self);
+	self.reset_hotkey = obs_hotkey_register_source(self.source, kResetHotkeyName,
+						       obs_module_text("GoalBar.Hotkey.Reset"), reset_hotkey_pressed,
+						       &self);
+}
+
+void unregister_hotkey(obs_hotkey_id &id)
+{
+	if (id != OBS_INVALID_HOTKEY_ID)
+		obs_hotkey_unregister(id);
+	id = OBS_INVALID_HOTKEY_ID;
 }
 
 const char *goal_bar_name(void *)
@@ -478,19 +566,31 @@ void *goal_bar_create(obs_data_t *settings, obs_source_t *source)
 	self->source = source;
 	self->actions = std::make_unique<GoalActions>(source);
 	goal_bar_update(self, settings);
+	register_hotkeys(*self);
 	return self;
+}
+
+// Saves the runtime goal: it is authoritative over the goal fields.
+void goal_bar_save(void *data, obs_data_t *settings)
+{
+	auto *self = static_cast<GoalBarSource *>(data);
+	std::lock_guard update_lock(self->update_mutex);
+	write_goal(settings, *self);
 }
 
 void goal_bar_destroy(void *data)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
+	// Unregistering waits for a running hotkey callback.
+	unregister_hotkey(self->test_hotkey);
+	unregister_hotkey(self->reset_hotkey);
 	{
 		// Join the provider's worker before anything else goes away.
 		std::unique_ptr<MetricProvider> provider;
 		std::lock_guard lock(self->provider_mutex);
 		provider = std::move(self->provider);
 	}
-	self->actions.reset(); // disconnects its signals
+	self->actions.reset(); // disconnects its signals and hides a shown source
 	obs_enter_graphics();
 	gs_texture_destroy(self->texture);
 	obs_leave_graphics();
@@ -516,6 +616,7 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, settings_key::kCurrent, to_obs_int(defaults.goal.current));
 	obs_data_set_default_int(settings, settings_key::kStep, to_obs_int(defaults.step));
 	obs_data_set_default_bool(settings, settings_key::kReachedFired, false);
+	obs_data_set_default_int(settings, kRevisionKey, 0);
 	obs_data_set_default_string(settings, settings_key::kMetric, std::string(metric_id(defaults.metric)).c_str());
 	obs_data_set_default_string(settings, settings_key::kPlatform,
 				    std::string(platform_id(defaults.platform)).c_str());
@@ -677,6 +778,7 @@ void register_goal_bar_source()
 	info.create = goal_bar_create;
 	info.destroy = goal_bar_destroy;
 	info.update = goal_bar_update;
+	info.save = goal_bar_save;
 	info.get_defaults = goal_bar_defaults;
 	info.get_properties = goal_bar_properties;
 	info.get_width = goal_bar_width;

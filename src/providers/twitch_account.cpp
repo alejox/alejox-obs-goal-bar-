@@ -71,6 +71,7 @@ void TwitchAccount::adopt_locked(const TwitchTokens &tokens)
 {
 	access_token_ = tokens.access_token;
 	refresh_token_ = tokens.refresh_token;
+	refresh_at_ = twitch_refresh_deadline(now_(), tokens.expires_in);
 	++generation_;
 	// The previous refresh token is now dead: persist the new one before
 	// anything else can fail.
@@ -82,6 +83,7 @@ void TwitchAccount::forget_locked()
 {
 	access_token_.clear();
 	refresh_token_.clear();
+	refresh_at_.reset();
 	user_.reset();
 	++generation_;
 	for (const char *key : {kRefreshTokenKey, kUserKey})
@@ -104,7 +106,8 @@ TwitchAccount::Snapshot TwitchAccount::snapshot()
 {
 	std::lock_guard lock(mutex_);
 	load_locked();
-	return Snapshot{!refresh_token_.empty(), access_token_, generation_};
+	const bool expiring = !access_token_.empty() && refresh_at_ && now_() >= *refresh_at_;
+	return Snapshot{!refresh_token_.empty(), access_token_, generation_, expiring};
 }
 
 TwitchAccount::Refresh TwitchAccount::refresh(uint64_t seen_generation, CancelToken &cancel, std::string &error)
@@ -169,6 +172,17 @@ HelixResponse TwitchAccount::get(const std::string &url, CancelToken &cancel)
 	// A fresh start has only the refresh token.
 	if (state.access_token.empty() && !renew())
 		return response;
+	// About to expire: refresh first instead of waiting for the 401. If that
+	// fails the current token is still tried (and the 401 path stays).
+	if (state.expiring) {
+		std::string ignored;
+		refresh(state.generation, cancel, ignored);
+		state = snapshot();
+		if (!state.has_account || state.access_token.empty()) {
+			response.outcome = HelixOutcome::AuthRequired;
+			return response;
+		}
+	}
 	response.http = helix_request(url, state.access_token, cancel);
 	// Expired or revoked access token: refresh once, then retry once.
 	if (response.http.status == 401) {

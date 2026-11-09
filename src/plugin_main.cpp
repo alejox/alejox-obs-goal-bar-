@@ -20,6 +20,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 
 #include "core/version.hpp"
 #include "obs/goal_bar_source.hpp"
+#include "obs/obs_shutdown.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -29,6 +30,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 bool obs_module_load(void)
 {
+	goalbar::obs::watch_obs_shutdown();
 	goalbar::obs::register_goal_bar_source();
 	obs_log(LOG_INFO, "loaded (version %s)", goalbar::core_version());
 	return true;
@@ -36,5 +38,6 @@ bool obs_module_load(void)
 
 void obs_module_unload(void)
 {
+	goalbar::obs::unwatch_obs_shutdown();
 	obs_log(LOG_INFO, "unloaded");
 }

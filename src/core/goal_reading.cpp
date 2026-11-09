@@ -29,4 +29,17 @@ ReadingOutcome apply_metric_value(Goal &goal, uint64_t value, ReadingKind kind, 
 	return outcome;
 }
 
+
+void reset_goal(Goal &goal, uint64_t auto_next_step)
+{
+	goal.reset();
+	if (goal.current < goal.target)
+		return;
+	goal.reached_fired = true;
+	if (auto_next_step == 0)
+		return;
+	goal = goal.advance(auto_next_step).value_or(goal);
+	goal.start = goal.current;
+}
+
 } // namespace goalbar

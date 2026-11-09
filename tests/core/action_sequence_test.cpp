@@ -13,17 +13,17 @@ using Commands = std::vector<ActionCommand>;
 
 ActionPlan celebration_only()
 {
-	return ActionPlan{true, false, false, 8.0, true};
+	return ActionPlan{true, false, false, 8.0, true, false};
 }
 
 ActionPlan timed_source(double seconds)
 {
-	return ActionPlan{true, true, false, seconds, true};
+	return ActionPlan{true, true, false, seconds, true, false};
 }
 
 ActionPlan media_source()
 {
-	return ActionPlan{true, true, true, 8.0, true};
+	return ActionPlan{true, true, true, 8.0, true, false};
 }
 
 } // namespace
@@ -131,4 +131,26 @@ TEST_CASE(restart_without_source_hides_the_shown_one)
 	ActionSequence sequence;
 	sequence.start(timed_source(8.0), true);
 	CHECK(sequence.start(celebration_only(), true) == Commands{ActionCommand::HideSource});
+}
+
+TEST_CASE(looping_media_hides_after_show_seconds)
+{
+	ActionPlan plan = media_source();
+	plan.source_loops = true;
+	plan.show_seconds = 12.0;
+	ActionSequence sequence;
+	sequence.start(plan, false);
+	CHECK(sequence.tick(11.9).empty());
+	CHECK(sequence.tick(0.1) == (Commands{ActionCommand::HideSource, ActionCommand::Advance}));
+}
+
+TEST_CASE(looping_media_still_hides_early_when_it_ends)
+{
+	ActionPlan plan = media_source();
+	plan.source_loops = true;
+	plan.show_seconds = 60.0;
+	ActionSequence sequence;
+	sequence.start(plan, false);
+	sequence.tick(kCelebrationSeconds);
+	CHECK(sequence.media_ended() == (Commands{ActionCommand::HideSource, ActionCommand::Advance}));
 }

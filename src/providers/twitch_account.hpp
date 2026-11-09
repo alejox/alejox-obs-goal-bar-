@@ -53,7 +53,8 @@ public:
 	virtual ~TwitchHelixClient() = default;
 	// The connected user, fetched once per connection and then cached.
 	virtual HelixUserResult current_user(CancelToken &cancel) = 0;
-	// Authorized Helix GET. On 401 it refreshes the token once and retries.
+	// Authorized Helix GET. Refreshes the access token shortly before it
+	// expires; on 401 it refreshes once more and retries.
 	virtual HelixResponse get(const std::string &url, CancelToken &cancel) = 0;
 };
 
@@ -105,6 +106,7 @@ private:
 		bool has_account = false;
 		std::string access_token;
 		uint64_t generation = 0;
+		bool expiring = false; // the access token is due for a proactive refresh
 	};
 
 	Snapshot snapshot();
@@ -130,6 +132,7 @@ private:
 	std::mutex mutex_; // guards everything below
 	bool loaded_ = false;
 	std::string access_token_;  // memory only
+	std::optional<Clock::time_point> refresh_at_; // proactive refresh, unknown lifetime: none
 	std::string refresh_token_; // mirrored in the secret store
 	std::optional<TwitchUser> user_;
 	uint64_t generation_ = 0; // bumps on every token change or disconnect

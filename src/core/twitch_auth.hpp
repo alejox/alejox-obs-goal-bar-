@@ -41,7 +41,17 @@ std::optional<TwitchDeviceCode> parse_twitch_device_code(std::string_view json);
 struct TwitchTokens {
 	std::string access_token;
 	std::string refresh_token;
+	std::chrono::seconds expires_in{0}; // access token lifetime, 0 when not sent
 };
+
+// Refresh the access token this long before it expires.
+inline constexpr std::chrono::seconds kTwitchRefreshMargin{60};
+
+// When an access token obtained at `obtained` should be refreshed
+// proactively: kTwitchRefreshMargin before expiry, or at half its lifetime
+// when that is shorter. Nullopt when the lifetime is unknown (rely on 401).
+std::optional<std::chrono::steady_clock::time_point>
+twitch_refresh_deadline(std::chrono::steady_clock::time_point obtained, std::chrono::seconds expires_in);
 
 enum class TwitchTokenError {
 	None,

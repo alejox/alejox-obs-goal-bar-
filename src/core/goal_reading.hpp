@@ -22,4 +22,10 @@ struct ReadingOutcome {
 // the value. Updates go through Goal::apply (fire once).
 ReadingOutcome apply_metric_value(Goal &goal, uint64_t value, ReadingKind kind, uint64_t auto_next_step);
 
+// "Reset goal": the goal starts over from its current value. A value already
+// at or above the target never celebrates: the goal is marked reached
+// silently, and with `auto_next_step` > 0 it advances silently until its
+// target is above the value (the new goal still starts at the value).
+void reset_goal(Goal &goal, uint64_t auto_next_step);
+
 } // namespace goalbar

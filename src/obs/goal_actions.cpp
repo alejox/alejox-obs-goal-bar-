@@ -1,6 +1,7 @@
 #include "obs/goal_actions.hpp"
 
 #include "core/goal_settings.hpp"
+#include "obs/obs_shutdown.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -29,6 +30,18 @@ bool is_media_source(obs_source_t *source)
 	const char *id = obs_source_get_unversioned_id(source);
 	const bool player = id && (std::strcmp(id, "ffmpeg_source") == 0 || std::strcmp(id, "vlc_source") == 0);
 	return player && (obs_source_get_output_flags(source) & OBS_SOURCE_CONTROLLABLE_MEDIA) != 0;
+}
+
+// A looping media never sends media_ended. ffmpeg_source calls the setting
+// "looping", vlc_source "loop".
+bool media_loops(obs_source_t *source)
+{
+	const char *id = obs_source_get_unversioned_id(source);
+	const char *key = id && std::strcmp(id, "vlc_source") == 0 ? "loop" : "looping";
+	obs_data_t *settings = obs_source_get_settings(source);
+	const bool loops = obs_data_get_bool(settings, key);
+	obs_data_release(settings);
+	return loops;
 }
 
 // --- Scene item visibility, always on the UI thread ---------------------------
@@ -180,6 +193,12 @@ GoalActions::GoalActions(obs_source_t *owner) : owner_(owner) {}
 GoalActions::~GoalActions()
 {
 	std::lock_guard lock(mutex_);
+	// Destroyed mid-celebration: hide the shown source, unless OBS is closing
+	// (the UI task may never run, and the scenes are going away anyway).
+	if (!obs_shutting_down()) {
+		hide();
+		return;
+	}
 	disconnect_media_signal();
 	obs_weak_source_release(shown_);
 	shown_ = nullptr;
@@ -211,6 +230,7 @@ void GoalActions::trigger(bool test)
 	}
 	plan.show_source = target != nullptr;
 	plan.source_is_media = target && is_media_source(target);
+	plan.source_loops = plan.source_is_media && media_loops(target);
 
 	++seed_;
 	media_ended_ = false;

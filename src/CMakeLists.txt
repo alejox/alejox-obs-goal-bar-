@@ -28,6 +28,7 @@ add_library(
   core/manual_provider.cpp
   core/metric.cpp
   core/poll_schedule.cpp
+  core/progress_tween.cpp
   core/style_preset.cpp
   core/subscriber_rounding.cpp
   core/twitch_auth.cpp

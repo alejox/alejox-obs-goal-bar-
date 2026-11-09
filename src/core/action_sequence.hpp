@@ -14,6 +14,7 @@ enum class ActionPhase { Idle, Celebrating, Advancing };
 enum class ActionCommand { ShowSource, HideSource, Advance };
 
 // A media source is hidden when it ends, but never stays up longer than this.
+// A looping one never ends: it is hidden after show_seconds (or when it ends).
 inline constexpr double kMaxMediaSeconds = 300.0;
 
 struct ActionPlan {
@@ -22,6 +23,7 @@ struct ActionPlan {
 	bool source_is_media = false; // hide on media end instead of after show_seconds
 	double show_seconds = 8.0;
 	bool auto_next = true; // advance to the next goal when everything ends
+	bool source_loops = false; // a looping media never ends: hide after show_seconds
 };
 
 class ActionSequence {
