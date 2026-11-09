@@ -131,9 +131,59 @@ void draw_neon_outline(QPainter &painter, const QRectF &bar, const BarStyle &sty
 	painter.drawPath(rounded(bar));
 }
 
+// Pulsing halo around the track plus a brightening of the bar itself.
+void draw_glow(QPainter &painter, const QRectF &bar, const BarStyle &style, double glow)
+{
+	if (glow <= 0.0)
+		return;
+	const QPainterPath track = rounded(bar);
+	const qreal reach = bar.height() * 0.45;
+	painter.save();
+	painter.setBrush(Qt::NoBrush);
+	for (int i = 4; i >= 1; --i) {
+		painter.setPen(QPen(with_alpha(style.accent, static_cast<int>(glow * 30 * (5 - i))), reach * i / 2.0));
+		painter.drawPath(track);
+	}
+	painter.fillPath(track, with_alpha(style.accent.lighter(170), static_cast<int>(glow * 110)));
+	painter.restore();
+}
+
+QColor confetti_color(int slot, const BarStyle &style)
+{
+	switch (slot) {
+	case 0:
+		return style.accent;
+	case 1:
+		return style.accent.lighter(160);
+	case 2:
+		return QColor(255, 210, 74); // gold
+	case 3:
+		return QColor(74, 216, 255); // cyan
+	default:
+		return QColor(255, 255, 255);
+	}
+}
+
+void draw_confetti(QPainter &painter, QSizeF size, const CelebrationFrame &frame, const BarStyle &style)
+{
+	painter.save();
+	painter.setPen(Qt::NoPen);
+	for (const ConfettiParticle &piece : frame.confetti) {
+		const qreal side = std::max<qreal>(3.0, piece.size * size.height());
+		const QColor color = with_alpha(confetti_color(piece.color, style), static_cast<int>(piece.alpha * 255));
+		painter.save();
+		painter.translate(piece.x * size.width(), piece.y * size.height());
+		painter.rotate(piece.angle * 57.29577951308232);
+		painter.fillRect(QRectF(-side / 2, -side / 4, side, side / 2), color);
+		painter.restore();
+	}
+	painter.restore();
+}
+
 } // namespace
 
-QImage GoalBarPainter::paint(const GoalView &view, const BarStyle &style, QSize size, const QString &reached_text)
+QImage GoalBarPainter::paint(const GoalView &view, const BarStyle &style, QSize size, const QString &reached_text,
+			     const CelebrationFrame *celebration)
 {
 	QImage image(size, QImage::Format_ARGB32_Premultiplied);
 	image.fill(Qt::transparent);
@@ -146,13 +196,17 @@ QImage GoalBarPainter::paint(const GoalView &view, const BarStyle &style, QSize 
 	QPainter painter(&image);
 	painter.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing | QPainter::SmoothPixmapTransform);
 
+	const bool celebrating = celebration && celebration->active;
 	draw_track(painter, preset, layout.bar, style);
 	draw_fill(painter, preset, layout.bar, view.progress, style);
+	if (celebrating)
+		draw_glow(painter, layout.bar, style, celebration->glow);
 	if (preset == StylePreset::Neon)
 		draw_neon_outline(painter, layout.bar, style);
 
 	const QColor *halo = preset == StylePreset::Neon ? &style.accent : nullptr;
-	const QString title = view.reached ? reached_text : QString::fromStdString(view.title);
+	const bool show_reached = view.reached || celebrating;
+	const QString title = show_reached ? reached_text : QString::fromStdString(view.title);
 	const QString value = QString::fromStdString(view.value_label);
 	const QFont::Weight weight = preset == StylePreset::Minimal ? QFont::DemiBold : QFont::Bold;
 
@@ -172,9 +226,12 @@ QImage GoalBarPainter::paint(const GoalView &view, const BarStyle &style, QSize 
 		title_rect.setRight(layout.text_row.right() - value_width - layout.text_px * 0.6);
 	}
 
-	const QColor title_color = view.reached ? style.accent.lighter(120) : style.text;
+	const QColor title_color = show_reached ? style.accent.lighter(120) : style.text;
 	if (title_rect.width() > 0)
 		draw_text(painter, title_rect, title, Qt::AlignLeft | Qt::AlignBottom, title_color, halo);
+
+	if (celebrating)
+		draw_confetti(painter, QSizeF(size), *celebration, style);
 
 	return image;
 }

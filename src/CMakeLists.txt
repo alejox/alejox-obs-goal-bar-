@@ -7,8 +7,12 @@ string(JSON goal_bar_version GET "${goal_bar_buildspec}" version)
 
 add_library(
   goal-bar-core STATIC
+  core/action_sequence.cpp
+  core/cancel_token.cpp
+  core/celebration.cpp
   core/compact_number.cpp
   core/goal.cpp
+  core/goal_reading.cpp
   core/goal_settings.cpp
   core/goal_view.cpp
   core/manual_provider.cpp

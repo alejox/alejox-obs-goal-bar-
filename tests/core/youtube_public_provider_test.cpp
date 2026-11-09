@@ -3,7 +3,10 @@
 #include "test_harness.hpp"
 
 #include <atomic>
+#include <memory>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -30,7 +33,7 @@ MetricReading settled(const MetricProvider &provider)
 
 PageFetcher serving(int status, std::string body, std::atomic<int> *calls = nullptr, std::string *url = nullptr)
 {
-	return [=](const std::string &requested) {
+	return [=](const std::string &requested, CancelToken &) {
 		if (calls)
 			++*calls;
 		if (url)
@@ -113,4 +116,37 @@ TEST_CASE(provider_stops_quickly_between_polls)
 		settled(provider);
 	}
 	CHECK(std::chrono::steady_clock::now() - start < 1s);
+}
+
+TEST_CASE(provider_destruction_aborts_a_blocked_fetch)
+{
+	std::atomic<bool> entered{false};
+	// Blocks like a stalled request until the token aborts it (or 3 s pass).
+	PageFetcher blocked = [&](const std::string &, CancelToken &cancel) {
+		std::mutex mutex;
+		std::condition_variable aborted_cv;
+		bool aborted = false;
+		AbortHook hook(&cancel, [&] {
+			std::lock_guard lock(mutex);
+			aborted = true;
+			aborted_cv.notify_all();
+		});
+		entered = true;
+		if (!hook.armed())
+			return HttpResult{0, "", "cancelled"};
+		std::unique_lock lock(mutex);
+		aborted_cv.wait_for(lock, 3s, [&] { return aborted; });
+		return HttpResult{0, "", "cancelled"};
+	};
+
+	auto provider = std::make_unique<YoutubePublicProvider>("https://www.youtube.com/@x", Metric::Likes,
+								 blocked, nullptr);
+	const auto deadline = std::chrono::steady_clock::now() + 2s;
+	while (!entered && std::chrono::steady_clock::now() < deadline)
+		std::this_thread::sleep_for(1ms);
+	REQUIRE(entered);
+
+	const auto start = std::chrono::steady_clock::now();
+	provider.reset();
+	CHECK(std::chrono::steady_clock::now() - start < 200ms);
 }

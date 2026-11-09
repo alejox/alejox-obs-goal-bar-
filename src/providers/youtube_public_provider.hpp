@@ -2,6 +2,7 @@
 // page, no login, no API key). No OBS, no Qt: HTTP and logging are injected.
 #pragma once
 
+#include "core/cancel_token.hpp"
 #include "core/metric_provider.hpp"
 #include "core/poll_schedule.hpp"
 #include "core/youtube_page.hpp"
@@ -22,7 +23,8 @@ struct HttpResult {
 };
 
 // Blocking GET of one URL; called only from the provider's worker thread.
-using PageFetcher = std::function<HttpResult(const std::string &url)>;
+// It must return promptly (status 0) once `cancel` is cancelled.
+using PageFetcher = std::function<HttpResult(const std::string &url, CancelToken &cancel)>;
 using ProviderLogger = std::function<void(const std::string &message)>;
 
 // Maps one parsed page onto a reading for `metric` (Likes or Subscribers).
@@ -36,7 +38,7 @@ public:
 	// `interval` (at least kMinPollInterval), backing off on errors.
 	YoutubePublicProvider(std::string channel_url, Metric metric, PageFetcher fetch, ProviderLogger log,
 			      std::chrono::seconds interval = kDefaultPollInterval);
-	// Wakes the worker and joins it. A request already in flight finishes first.
+	// Cancels a request in flight, wakes the worker and joins it.
 	~YoutubePublicProvider() override;
 
 	YoutubePublicProvider(const YoutubePublicProvider &) = delete;
@@ -60,6 +62,7 @@ private:
 	mutable std::mutex mutex_;
 	std::condition_variable wake_;
 	bool stop_ = false;
+	CancelToken cancel_; // aborts the fetch in flight on destruction
 	MetricReading reading_;
 	std::thread worker_; // last member: starts after everything above exists
 };

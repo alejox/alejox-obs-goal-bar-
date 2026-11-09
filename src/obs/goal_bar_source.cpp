@@ -1,10 +1,12 @@
 #include "obs/goal_bar_source.hpp"
 
+#include "core/goal_reading.hpp"
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
 #include "core/style_preset.hpp"
 #include "core/subscriber_rounding.hpp"
 #include "core/youtube_page.hpp"
+#include "obs/goal_actions.hpp"
 #include "obs/provider_factory.hpp"
 #include "render/goal_bar_painter.hpp"
 
@@ -68,6 +70,11 @@ struct GoalBarSource {
 	std::string title;
 	std::string status; // localized provider note, empty when live or manual
 	render::BarStyle style;
+	bool auto_next = true;
+	std::optional<CelebrationFrame> celebration; // drawn while set
+
+	// Goal-reached side effects; outlives every call into this source.
+	std::unique_ptr<GoalActions> actions;
 
 	// Provider plus the last reading applied from it (video_tick).
 	std::mutex provider_mutex;
@@ -75,6 +82,7 @@ struct GoalBarSource {
 	ProviderKey provider_key;
 	std::optional<uint64_t> applied_value;
 	ProviderState applied_state = ProviderState::Idle;
+	bool needs_baseline = true; // the next value is the provider's first one
 
 	// Hand-off to the graphics thread.
 	std::mutex image_mutex;
@@ -153,7 +161,8 @@ void repaint_locked(GoalBarSource &self)
 	const uint32_t height = self.height;
 	const GoalView view = build_goal_view(self.goal, self.title, self.status);
 	QImage image = render::GoalBarPainter::paint(view, self.style, QSize(int(width), int(height)),
-						     QString::fromUtf8(obs_module_text("GoalBar.Reached")));
+						     QString::fromUtf8(obs_module_text("GoalBar.Reached")),
+						     self.celebration ? &*self.celebration : nullptr);
 
 	std::lock_guard image_lock(self.image_mutex);
 	self.image = std::move(image);
@@ -168,7 +177,7 @@ void log_if_reached(GoalEvent event, const Goal &goal)
 }
 
 // Applies goal bookkeeping for a settings change and persists what it changed.
-void apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSettings &next)
+GoalEvent apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSettings &next)
 {
 	const bool persisted_fired = next.goal.reached_fired;
 	if (is_youtube_subscribers(next)) {
@@ -182,10 +191,12 @@ void apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSettings &
 	if (self.has_goal && next.goal.target != self.goal.goal.target)
 		next.goal.set_target(next.goal.target);
 
-	log_if_reached(next.goal.apply(next.goal.current), next.goal);
+	const GoalEvent event = next.goal.apply(next.goal.current);
+	log_if_reached(event, next.goal);
 
 	if (next.goal.reached_fired != persisted_fired)
 		obs_data_set_bool(settings, settings_key::kReachedFired, next.goal.reached_fired);
+	return event;
 }
 
 // YouTube has no followers metric: fall back to likes and persist the choice.
@@ -224,6 +235,7 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 		self.provider_key = key;
 		self.applied_value.reset();
 		self.applied_state = ProviderState::Idle;
+		self.needs_baseline = true;
 	}
 	if (old || key.platform == Platform::YouTube)
 		obs_log(LOG_INFO, "metric provider: %s",
@@ -240,7 +252,13 @@ void goal_bar_update(void *data, obs_data_t *settings)
 
 	std::lock_guard update_lock(self->update_mutex);
 	GoalSettings next = decode_goal_settings(read_goal_settings(settings));
-	apply_goal_change(*self, settings, next);
+	const GoalEvent event = apply_goal_change(*self, settings, next);
+	const ActionSettings actions = read_action_settings(settings);
+	self->actions->configure(actions);
+	self->auto_next = actions.auto_next;
+	// The first update restores a saved goal: never celebrate on reload.
+	if (event == GoalEvent::GoalReached && self->has_goal)
+		self->actions->trigger(false);
 	self->goal = next;
 	self->has_goal = true;
 	if (provider_status)
@@ -256,47 +274,96 @@ void goal_bar_update(void *data, obs_data_t *settings)
 void persist_goal(obs_source_t *source, const Goal &goal)
 {
 	obs_data_t *settings = obs_source_get_settings(source);
+	obs_data_set_int(settings, settings_key::kStart, to_obs_int(goal.start));
 	obs_data_set_int(settings, settings_key::kCurrent, to_obs_int(goal.current));
 	obs_data_set_int(settings, settings_key::kTarget, to_obs_int(goal.target));
 	obs_data_set_bool(settings, settings_key::kReachedFired, goal.reached_fired);
 	obs_data_release(settings);
 }
 
-void apply_reading(GoalBarSource &self, const MetricReading &reading)
+// YouTube rounds subscriber counts: keep the target on a reachable step.
+// Re-arms only when the aligned target moves above the value.
+void align_subscriber_target(const GoalSettings &settings, Goal &goal, uint64_t value)
+{
+	if (!is_youtube_subscribers(settings))
+		return;
+	const uint64_t aligned = align_target_to_step(goal.target, value);
+	if (aligned != goal.target)
+		goal.set_target(aligned);
+}
+
+void apply_reading(GoalBarSource &self, const MetricReading &reading, ReadingKind kind)
 {
 	std::lock_guard update_lock(self.update_mutex);
 	self.status = status_text(reading);
-	const bool has_new_value = reading.value && *reading.value != self.goal.goal.current;
+	const bool has_new_value =
+		reading.value && (kind == ReadingKind::Baseline || *reading.value != self.goal.goal.current);
 	if (has_new_value) {
 		Goal &goal = self.goal.goal;
-		if (is_youtube_subscribers(self.goal)) {
-			// Re-arms only when the aligned target moves above the value.
-			const uint64_t aligned = align_target_to_step(goal.target, *reading.value);
-			if (aligned != goal.target)
-				goal.set_target(aligned);
-		}
-		log_if_reached(goal.apply(*reading.value), goal);
+		align_subscriber_target(self.goal, goal, *reading.value);
+		const uint64_t auto_next_step = self.auto_next ? self.goal.step : 0;
+		const ReadingOutcome outcome = apply_metric_value(goal, *reading.value, kind, auto_next_step);
+		log_if_reached(outcome.event, goal);
 		persist_goal(self.source, goal);
+		if (outcome.event == GoalEvent::GoalReached)
+			self.actions->trigger(false);
 	}
 	repaint_locked(self);
 }
 
-// Video thread: cheap check for a new provider reading.
-void goal_bar_tick(void *data, float)
+// Cheap check for a new provider reading.
+void poll_provider(GoalBarSource &self)
+{
+	MetricReading reading;
+	ReadingKind kind = ReadingKind::Update;
+	{
+		std::lock_guard lock(self.provider_mutex);
+		if (!self.provider)
+			return;
+		reading = self.provider->latest();
+		if (reading.value == self.applied_value && reading.state == self.applied_state)
+			return;
+		self.applied_value = reading.value;
+		self.applied_state = reading.state;
+		if (reading.value && self.needs_baseline) {
+			kind = ReadingKind::Baseline;
+			self.needs_baseline = false;
+		}
+	}
+	apply_reading(self, reading, kind);
+}
+
+// Moves to the next goal after a celebration. Caller holds update_mutex.
+void advance_goal_locked(GoalBarSource &self)
+{
+	std::optional<Goal> next = self.goal.goal.advance(self.goal.step);
+	if (!next)
+		return;
+	align_subscriber_target(self.goal, *next, next->current);
+	self.goal.goal = *next;
+	persist_goal(self.source, self.goal.goal);
+	obs_log(LOG_INFO, "next goal: %llu", static_cast<unsigned long long>(next->target));
+}
+
+// Advances the goal actions; repaints only while celebrating.
+void run_actions(GoalBarSource &self, float seconds)
+{
+	const GoalActions::Tick tick = self.actions->tick(seconds);
+	if (!tick.repaint && !tick.advance)
+		return;
+	std::lock_guard update_lock(self.update_mutex);
+	self.celebration = tick.frame;
+	if (tick.advance)
+		advance_goal_locked(self);
+	repaint_locked(self);
+}
+
+// Video thread.
+void goal_bar_tick(void *data, float seconds)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
-	MetricReading reading;
-	{
-		std::lock_guard lock(self->provider_mutex);
-		if (!self->provider)
-			return;
-		reading = self->provider->latest();
-		if (reading.value == self->applied_value && reading.state == self->applied_state)
-			return;
-		self->applied_value = reading.value;
-		self->applied_state = reading.state;
-	}
-	apply_reading(*self, reading);
+	poll_provider(*self);
+	run_actions(*self, seconds);
 }
 
 // Graphics thread: uploads the latest painted frame, if any.
@@ -363,6 +430,14 @@ bool reset_goal_clicked(obs_properties_t *, obs_property_t *, void *data)
 	return false;
 }
 
+bool test_celebration_clicked(obs_properties_t *, obs_property_t *, void *data)
+{
+	auto *self = static_cast<GoalBarSource *>(data);
+	if (self) // properties requested without a source instance
+		self->actions->trigger(true);
+	return false;
+}
+
 const char *goal_bar_name(void *)
 {
 	return obs_module_text("GoalBar");
@@ -372,6 +447,7 @@ void *goal_bar_create(obs_data_t *settings, obs_source_t *source)
 {
 	auto *self = new GoalBarSource();
 	self->source = source;
+	self->actions = std::make_unique<GoalActions>(source);
 	goal_bar_update(self, settings);
 	return self;
 }
@@ -385,6 +461,7 @@ void goal_bar_destroy(void *data)
 		std::lock_guard lock(self->provider_mutex);
 		provider = std::move(self->provider);
 	}
+	self->actions.reset(); // disconnects its signals
 	obs_enter_graphics();
 	gs_texture_destroy(self->texture);
 	obs_leave_graphics();
@@ -419,6 +496,7 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, kTextColorKey, kDefaultTextColor);
 	obs_data_set_default_int(settings, kWidthKey, kDefaultWidth);
 	obs_data_set_default_int(settings, kHeightKey, kDefaultHeight);
+	set_action_defaults(settings);
 }
 
 Platform selected_platform(obs_data_t *settings)
@@ -503,6 +581,8 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_properties_add_int(props, kWidthKey, obs_module_text("GoalBar.Width"), 16, 4096, 1);
 	obs_properties_add_int(props, kHeightKey, obs_module_text("GoalBar.Height"), 16, 4096, 1);
 	obs_properties_add_button2(props, kResetKey, obs_module_text("GoalBar.ResetGoal"), reset_goal_clicked, data);
+	auto *self = static_cast<GoalBarSource *>(data);
+	add_action_properties(props, self ? self->source : nullptr, test_celebration_clicked, data);
 	return props;
 }
 

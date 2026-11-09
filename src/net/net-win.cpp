@@ -113,9 +113,39 @@ int status_code(HINTERNET request)
 	return (int)status;
 }
 
+// Closes the request handle when the token is cancelled: WinHTTP then fails
+// the blocking call in progress at once. The handle is never closed twice.
+struct CloseOnCancel {
+	Handle &request;
+	AbortHook hook;
+	CloseOnCancel(Handle &target, CancelToken *cancel)
+		: request(target),
+		  hook(cancel, [h = target.h] { WinHttpCloseHandle(h); })
+	{
+	}
+	CloseOnCancel(const CloseOnCancel &) = delete;
+	CloseOnCancel &operator=(const CloseOnCancel &) = delete;
+	~CloseOnCancel() { disarm(); }
+	// True when the cancel closed the handle.
+	bool disarm()
+	{
+		const bool closed = hook.disarm();
+		if (closed)
+			request.h = nullptr;
+		return closed;
+	}
+};
+
+Response cancelled_response()
+{
+	Response res;
+	res.error = kCancelledError;
+	return res;
+}
+
 } // namespace
 
-Response get(const std::string &url, const Headers &headers, int timeout_ms)
+Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
 {
 	Response res;
 	Url u;
@@ -138,11 +168,16 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms)
 		res.error = last_error("WinHttpOpenRequest");
 		return res;
 	}
+	CloseOnCancel cancel_guard(request, cancel);
+	if (!cancel_guard.hook.armed())
+		return cancelled_response();
 	WinHttpSetTimeouts(request, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
 	const std::wstring block = header_block(headers);
 	if (!WinHttpSendRequest(request, block.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : block.c_str(),
 				block.empty() ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
 	    !WinHttpReceiveResponse(request, nullptr)) {
+		if (cancel_guard.disarm())
+			return cancelled_response();
 		res.error = last_error("no response");
 		return res;
 	}
@@ -151,6 +186,8 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms)
 	for (;;) {
 		DWORD read = 0;
 		if (!WinHttpReadData(request, buffer, sizeof(buffer), &read)) {
+			if (cancel_guard.disarm())
+				return cancelled_response();
 			res.error = last_error("read");
 			res.status = 0;
 			return res;
@@ -164,6 +201,8 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms)
 			return res;
 		}
 	}
+	if (cancel_guard.disarm())
+		return cancelled_response();
 	return res;
 }
 

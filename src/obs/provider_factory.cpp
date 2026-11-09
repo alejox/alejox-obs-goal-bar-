@@ -16,9 +16,9 @@ namespace {
 const net::Headers kYoutubeHeaders = {{"Cookie", "CONSENT=YES+1; SOCS=CAI"},
 				      {"Accept-Language", "en-US,en;q=0.9"}};
 
-HttpResult fetch_youtube_page(const std::string &url)
+HttpResult fetch_youtube_page(const std::string &url, CancelToken &cancel)
 {
-	net::Response response = net::get(url, kYoutubeHeaders);
+	net::Response response = net::get(url, kYoutubeHeaders, 10000, &cancel);
 	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
 }
 

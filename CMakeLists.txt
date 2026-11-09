@@ -36,7 +36,12 @@ set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES AUTOMOC ON AUTOUIC ON AUT
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin_main.cpp src/obs/goal_bar_source.cpp src/obs/provider_factory.cpp src/render/goal_bar_painter.cpp
+  PRIVATE
+    src/plugin_main.cpp
+    src/obs/goal_actions.cpp
+    src/obs/goal_bar_source.cpp
+    src/obs/provider_factory.cpp
+    src/render/goal_bar_painter.cpp
 )
 
 # System HTTPS stack: OBS does not ship Qt's TLS plugins on Windows or macOS, so

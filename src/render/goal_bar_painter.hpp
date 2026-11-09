@@ -1,6 +1,7 @@
 // Render adapter: Qt only, no OBS.
 #pragma once
 
+#include "core/celebration.hpp"
 #include "core/goal_view.hpp"
 #include "core/style_preset.hpp"
 
@@ -22,8 +23,10 @@ struct BarStyle {
 class GoalBarPainter {
 public:
 	// `reached_text` is the localized "Goal reached!" label, shown when the
-	// view is reached.
-	static QImage paint(const GoalView &view, const BarStyle &style, QSize size, const QString &reached_text);
+	// view is reached or a celebration is active. An active `celebration`
+	// adds the bar glow and the confetti computed by the core.
+	static QImage paint(const GoalView &view, const BarStyle &style, QSize size, const QString &reached_text,
+			    const CelebrationFrame *celebration = nullptr);
 };
 
 } // namespace goalbar::render

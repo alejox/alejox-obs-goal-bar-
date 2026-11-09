@@ -33,7 +33,7 @@ namespace goalbar::net {
 
     }  // namespace
 
-    Response get(const std::string &url, const Headers &headers, int timeout_ms)
+    Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
     {
         Response res;
         @autoreleasepool {
@@ -64,9 +64,20 @@ namespace goalbar::net {
                       }
                       dispatch_semaphore_signal(done);
                   }];
+            // -[NSURLSessionTask cancel] is thread-safe; the completion
+            // handler then runs at once with NSURLErrorCancelled.
+            AbortHook hook(cancel, [task] { [task cancel]; });
+            if (!hook.armed()) {
+                res.error = kCancelledError;
+                return res;
+            }
             [task resume];
             dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
             res = out;
+            if (hook.disarm()) {
+                res = Response{};
+                res.error = kCancelledError;
+            }
         }
         return res;
     }

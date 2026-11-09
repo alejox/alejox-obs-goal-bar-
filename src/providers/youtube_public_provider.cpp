@@ -76,6 +76,7 @@ YoutubePublicProvider::~YoutubePublicProvider()
 		std::lock_guard lock(mutex_);
 		stop_ = true;
 	}
+	cancel_.cancel();
 	wake_.notify_all();
 	if (worker_.joinable())
 		worker_.join();
@@ -99,7 +100,7 @@ MetricReading YoutubePublicProvider::latest() const
 
 MetricReading YoutubePublicProvider::poll_once()
 {
-	const HttpResult result = fetch_(url_);
+	const HttpResult result = fetch_(url_, cancel_);
 	if (result.status == 0)
 		return error_reading(result.error.empty() ? "no response" : result.error);
 	if (result.status < 200 || result.status >= 300)
