@@ -21,12 +21,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Key on the buildspec "dependencies" section only, so a version bump keeps the cache.
+      - name: Compute OBS dependencies key
+        id: deps-key
+        run: |
+          $deps = (Get-Content buildspec.json -Raw | ConvertFrom-Json).dependencies | ConvertTo-Json -Depth 10 -Compress
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes($deps)
+          $hash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData($bytes)).Replace('-', '').ToLower()
+          "hash=$hash" >> $env:GITHUB_OUTPUT
+
+      # restore-keys falls back to the newest deps cache; the buildspec hash check in
+      # configure re-downloads only what actually changed.
       - name: Restore OBS dependencies
         id: restore-deps
         uses: actions/cache/restore@v6
         with:
           path: .deps
-          key: deps-windows-x64-${{ hashFiles('buildspec.json', 'cmake/common/buildspec_common.cmake', 'cmake/windows/buildspec.cmake') }}
+          key: deps-windows-x64-${{ steps.deps-key.outputs.hash }}-${{ hashFiles('cmake/common/buildspec_common.cmake', 'cmake/windows/buildspec.cmake') }}
+          restore-keys: |
+            deps-windows-x64-
 
       # Configure downloads OBS sources and obs-deps from GitHub; retry transient HTTP errors.
       - name: Configure
