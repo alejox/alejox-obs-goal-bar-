@@ -60,3 +60,6 @@ Native OBS plugin "Goal Bar": an on-scene progress bar toward a live goal (YouTu
 
 ## Next step
 All tasks done. Open follow-ups: in-OBS checks for T7/T8 on macOS and for the Windows/Linux packages; multi-stream's Windows zip likely has the DLL at the wrong path (separate repo).
+
+## Out of scope (decided 2026-11-09)
+- TikTok, Instagram, Facebook: unauthenticated public fetches all blocked (TikTok SlardarWAF challenge page / empty API; Instagram web_profile_info 404 and login-gated profile; Facebook page HTTP 400). Only paths are a paid signing relay (TikTok) or official Meta API with per-user apps / App Review, which breaks the "simple" goal. Starvios has no API. Revisit on demand.
