@@ -1,30 +1,11 @@
 #include "providers/youtube_public_provider.hpp"
 
+#include "providers/provider_state_name.hpp"
+
 #include <utility>
 
 namespace goalbar {
 namespace {
-
-const char *state_name(ProviderState state)
-{
-	switch (state) {
-	case ProviderState::Idle:
-		return "idle";
-	case ProviderState::Connecting:
-		return "connecting";
-	case ProviderState::Live:
-		return "live";
-	case ProviderState::NotLive:
-		return "not live";
-	case ProviderState::AuthRequired:
-		return "auth required";
-	case ProviderState::RateLimited:
-		return "rate limited";
-	case ProviderState::Error:
-		return "error";
-	}
-	return "unknown";
-}
 
 MetricReading error_reading(std::string message)
 {
@@ -121,7 +102,7 @@ void YoutubePublicProvider::publish(MetricReading reading)
 	}
 	if (changed && log_) {
 		const MetricReading now = latest();
-		log_("YouTube " + url_ + ": " + state_name(now.state) + (now.message.empty() ? "" : " (" + now.message + ")"));
+		log_("YouTube " + url_ + ": " + provider_state_name(now.state) + (now.message.empty() ? "" : " (" + now.message + ")"));
 	}
 }
 

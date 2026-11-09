@@ -41,22 +41,35 @@ target_sources(
     src/obs/goal_actions.cpp
     src/obs/goal_bar_source.cpp
     src/obs/provider_factory.cpp
+    src/obs/twitch_services.cpp
     src/render/goal_bar_painter.cpp
+    src/secrets/platform_secret_store.cpp
+    src/ui/twitch_connect_dialog.cpp
 )
 
 # System HTTPS stack: OBS does not ship Qt's TLS plugins on Windows or macOS, so
 # QtNetwork cannot do HTTPS inside OBS (same approach as multi-chat).
+# OS secret store for the Twitch refresh token (Keychain, Credential Manager,
+# Secret Service), adapted from multi-stream.
 if(OS_WINDOWS)
-  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/net/net-win.cpp)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE winhttp)
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/net/net-win.cpp src/secrets/windows_credential_store.cpp)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE winhttp Advapi32)
 elseif(OS_MACOS)
   enable_language(OBJCXX)
-  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/net/net-mac.mm)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "$<LINK_LIBRARY:FRAMEWORK,Foundation.framework>")
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/net/net-mac.mm src/secrets/keychain_secret_store.cpp)
+  target_link_libraries(
+    ${CMAKE_PROJECT_NAME}
+    PRIVATE
+      "$<LINK_LIBRARY:FRAMEWORK,Foundation.framework>"
+      "$<LINK_LIBRARY:FRAMEWORK,CoreFoundation.framework>"
+      "$<LINK_LIBRARY:FRAMEWORK,Security.framework>"
+  )
 else()
   find_package(CURL REQUIRED)
-  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/net/net-linux.cpp)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/net/net-linux.cpp src/secrets/linux_secret_store.cpp)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CURL::libcurl PkgConfig::LIBSECRET)
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

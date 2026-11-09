@@ -1,6 +1,8 @@
 #include "obs/provider_factory.hpp"
 
 #include "net/net.hpp"
+#include "obs/twitch_services.hpp"
+#include "providers/twitch_provider.hpp"
 #include "providers/youtube_public_provider.hpp"
 
 #include <obs-module.h>
@@ -32,6 +34,11 @@ void log_provider(const std::string &message)
 std::unique_ptr<MetricProvider> make_youtube_provider(const std::string &channel_url, Metric metric)
 {
 	return std::make_unique<YoutubePublicProvider>(channel_url, metric, fetch_youtube_page, log_provider);
+}
+
+std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric)
+{
+	return std::make_unique<TwitchProvider>(twitch_account(), metric, log_provider);
 }
 
 } // namespace goalbar::obs

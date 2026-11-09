@@ -27,6 +27,10 @@ struct Response {
 Response get(const std::string &url, const Headers &headers = {}, int timeout_ms = 10000,
 	     CancelToken *cancel = nullptr);
 
+// POST of an application/x-www-form-urlencoded `body`; same rules as get().
+Response post_form(const std::string &url, const std::string &body, const Headers &headers = {},
+		   int timeout_ms = 10000, CancelToken *cancel = nullptr);
+
 inline constexpr const char *kCancelledError = "cancelled";
 
 // Desktop Chrome user agent for the current OS.

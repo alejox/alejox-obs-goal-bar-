@@ -89,9 +89,9 @@ CURLcode perform(CURL *easy, CancelToken *cancel, bool &cancelled)
 	return result;
 }
 
-} // namespace
-
-Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
+// `body` is null for GET; otherwise it is sent as a form-encoded POST body.
+Response perform_request(const std::string &url, const Headers &headers, const std::string *body, int timeout_ms,
+			 CancelToken *cancel)
 {
 	global_init();
 	Response res;
@@ -109,7 +109,14 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms, Can
 	curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L);
 	curl_easy_setopt(h, CURLOPT_MAXREDIRS, 10L);
 	curl_easy_setopt(h, CURLOPT_ACCEPT_ENCODING, ""); // whatever this libcurl supports
-	curl_easy_setopt(h, CURLOPT_HTTPGET, 1L);
+	if (body) {
+		curl_easy_setopt(h, CURLOPT_POST, 1L);
+		curl_easy_setopt(h, CURLOPT_POSTFIELDS, body->c_str());
+		curl_easy_setopt(h, CURLOPT_POSTFIELDSIZE, long(body->size()));
+		easy.headers = curl_slist_append(easy.headers, "Content-Type: application/x-www-form-urlencoded");
+	} else {
+		curl_easy_setopt(h, CURLOPT_HTTPGET, 1L);
+	}
 	for (const auto &[name, value] : headers)
 		easy.headers = curl_slist_append(easy.headers, (name + ": " + value).c_str());
 	if (easy.headers)
@@ -134,6 +141,19 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms, Can
 	curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status);
 	res.status = int(status);
 	return res;
+}
+
+} // namespace
+
+Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
+{
+	return perform_request(url, headers, nullptr, timeout_ms, cancel);
+}
+
+Response post_form(const std::string &url, const std::string &body, const Headers &headers, int timeout_ms,
+		   CancelToken *cancel)
+{
+	return perform_request(url, headers, &body, timeout_ms, cancel);
 }
 
 } // namespace goalbar::net

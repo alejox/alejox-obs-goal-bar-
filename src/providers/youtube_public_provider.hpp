@@ -6,6 +6,7 @@
 #include "core/metric_provider.hpp"
 #include "core/poll_schedule.hpp"
 #include "core/youtube_page.hpp"
+#include "providers/http_types.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -15,12 +16,6 @@
 #include <thread>
 
 namespace goalbar {
-
-struct HttpResult {
-	int status = 0; // 0 = no response, see `error`
-	std::string body;
-	std::string error;
-};
 
 // Blocking GET of one URL; called only from the provider's worker thread.
 // It must return promptly (status 0) once `cancel` is cancelled.

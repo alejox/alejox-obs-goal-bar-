@@ -8,12 +8,17 @@
 #include "core/youtube_page.hpp"
 #include "obs/goal_actions.hpp"
 #include "obs/provider_factory.hpp"
+#include "obs/twitch_services.hpp"
+#include "providers/twitch_provider.hpp"
 #include "render/goal_bar_painter.hpp"
+#include "ui/twitch_connect_dialog.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 
 #include <QImage>
+#include <QWidget>
 
 #include <algorithm>
 #include <atomic>
@@ -39,6 +44,9 @@ constexpr const char *kHeightKey = "height";
 constexpr const char *kResetKey = "reset_goal";
 constexpr const char *kChannelKey = "youtube_channel";
 constexpr const char *kSubsNoticeKey = "youtube_subs_notice";
+constexpr const char *kTwitchStatusKey = "twitch_account_status";
+constexpr const char *kTwitchConnectKey = "twitch_connect";
+constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
 
 constexpr long long kDefaultWidth = 800;
 constexpr long long kDefaultHeight = 120;
@@ -148,6 +156,11 @@ std::string status_text(const MetricReading &reading)
 		return obs_module_text("GoalBar.Status.Connecting");
 	case ProviderState::NotLive:
 		return obs_module_text("GoalBar.Status.Offline");
+	case ProviderState::AuthRequired:
+		return obs_module_text("GoalBar.Status.AuthRequired");
+	case ProviderState::Error:
+		return reading.message == kTwitchNeedsAffiliate ? obs_module_text("GoalBar.Status.NeedsAffiliate")
+								 : obs_module_text("GoalBar.Status.Error");
 	default:
 		return obs_module_text("GoalBar.Status.Error");
 	}
@@ -199,19 +212,34 @@ GoalEvent apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSetti
 	return event;
 }
 
-// YouTube has no followers metric: fall back to likes and persist the choice.
+// Each platform reads only some metrics; an unreadable one falls back to the
+// platform's first metric and the choice is persisted.
 ProviderKey read_provider_key(obs_data_t *settings)
 {
 	const GoalSettings decoded = decode_goal_settings(read_goal_settings(settings));
 	ProviderKey key{decoded.platform, decoded.metric, {}};
-	if (key.platform != Platform::YouTube)
-		return key;
-	if (key.metric == Metric::Followers) {
-		key.metric = Metric::Likes;
+	const bool youtube_followers = key.platform == Platform::YouTube && key.metric == Metric::Followers;
+	const bool twitch_likes = key.platform == Platform::Twitch && key.metric == Metric::Likes;
+	if (youtube_followers || twitch_likes) {
+		key.metric = youtube_followers ? Metric::Likes : Metric::Followers;
 		obs_data_set_string(settings, settings_key::kMetric, std::string(metric_id(key.metric)).c_str());
 	}
+	if (key.platform != Platform::YouTube)
+		return key;
 	key.channel_url = normalize_youtube_channel(obs_data_get_string(settings, kChannelKey)).value_or("");
 	return key;
+}
+
+std::string describe_provider(const ProviderKey &key)
+{
+	switch (key.platform) {
+	case Platform::YouTube:
+		return key.channel_url.empty() ? "YouTube (no channel)" : key.channel_url;
+	case Platform::Twitch:
+		return std::string("Twitch ") + std::string(metric_id(key.metric));
+	default:
+		return "manual";
+	}
 }
 
 // Swaps in a provider for `key`. Returns the initial status text, or nullopt
@@ -227,9 +255,13 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 		std::unique_ptr<MetricProvider> next;
 		if (key.platform == Platform::YouTube && !key.channel_url.empty())
 			next = make_youtube_provider(key.channel_url, key.metric);
+		if (key.platform == Platform::Twitch)
+			next = make_twitch_provider(key.metric);
 		if (key.platform == Platform::YouTube)
 			status = next ? obs_module_text("GoalBar.Status.Connecting")
 				      : obs_module_text("GoalBar.Status.NoChannel");
+		if (key.platform == Platform::Twitch)
+			status = obs_module_text("GoalBar.Status.Connecting");
 		old = std::move(self.provider);
 		self.provider = std::move(next);
 		self.provider_key = key;
@@ -237,11 +269,8 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 		self.applied_state = ProviderState::Idle;
 		self.needs_baseline = true;
 	}
-	if (old || key.platform == Platform::YouTube)
-		obs_log(LOG_INFO, "metric provider: %s",
-			key.platform == Platform::YouTube ? (key.channel_url.empty() ? "YouTube (no channel)"
-										     : key.channel_url.c_str())
-							  : "manual");
+	if (old || key.platform != Platform::Manual)
+		obs_log(LOG_INFO, "metric provider: %s", describe_provider(key).c_str());
 	return status;
 }
 
@@ -511,10 +540,53 @@ void fill_metric_list(obs_property_t *list, Platform platform)
 	const std::pair<Metric, const char *> metrics[] = {{Metric::Likes, "Metric.Likes"},
 							   {Metric::Subscribers, "Metric.Subscribers"},
 							   {Metric::Followers, "Metric.Followers"}};
-	for (const auto &[metric, label] : metrics)
-		if (platform != Platform::YouTube || metric != Metric::Followers)
+	for (const auto &[metric, label] : metrics) {
+		const bool unreadable = (platform == Platform::YouTube && metric == Metric::Followers) ||
+					(platform == Platform::Twitch && metric == Metric::Likes);
+		if (!unreadable)
 			obs_property_list_add_string(list, obs_module_text(label),
 						     std::string(metric_id(metric)).c_str());
+	}
+}
+
+// Shows the Twitch account line and the matching Connect/Disconnect button.
+// Reads the account (and so the secret store) only when Twitch is selected.
+void update_twitch_account(obs_properties_t *props, bool twitch)
+{
+	obs_property_t *status = obs_properties_get(props, kTwitchStatusKey);
+	obs_property_t *connect = obs_properties_get(props, kTwitchConnectKey);
+	obs_property_t *disconnect = obs_properties_get(props, kTwitchDisconnectKey);
+	bool connected = false;
+	if (twitch) {
+		const TwitchAccount::Status account = twitch_account()->status();
+		connected = account.connected;
+		std::string line = obs_module_text("GoalBar.Twitch.NotConnected");
+		if (connected) {
+			line = obs_module_text("GoalBar.Twitch.Connected");
+			if (!account.display_name.empty())
+				line = obs_module_text("GoalBar.Twitch.ConnectedAs") + std::string(" ") +
+				       account.display_name;
+		}
+		obs_property_set_description(status, line.c_str());
+	}
+	obs_property_set_visible(status, twitch);
+	obs_property_set_visible(connect, twitch && !connected);
+	obs_property_set_visible(disconnect, twitch && connected);
+}
+
+bool twitch_connect_clicked(obs_properties_t *props, obs_property_t *, void *)
+{
+	auto *parent = static_cast<QWidget *>(obs_frontend_get_main_window());
+	ui::run_twitch_connect_dialog(parent, twitch_account());
+	update_twitch_account(props, true);
+	return true;
+}
+
+bool twitch_disconnect_clicked(obs_properties_t *props, obs_property_t *, void *)
+{
+	twitch_account()->disconnect();
+	update_twitch_account(props, true);
+	return true;
 }
 
 bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
@@ -527,9 +599,10 @@ bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 
 bool platform_changed(obs_properties_t *props, obs_property_t *property, obs_data_t *settings)
 {
-	const bool youtube = selected_platform(settings) == Platform::YouTube;
-	obs_property_set_visible(obs_properties_get(props, kChannelKey), youtube);
-	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent), !youtube);
+	const Platform platform = selected_platform(settings);
+	obs_property_set_visible(obs_properties_get(props, kChannelKey), platform == Platform::YouTube);
+	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent), platform == Platform::Manual);
+	update_twitch_account(props, platform == Platform::Twitch);
 	fill_metric_list(obs_properties_get(props, settings_key::kMetric), selected_platform(settings));
 	return metric_changed(props, property, settings);
 }
@@ -540,7 +613,8 @@ void add_platform_list(obs_properties_t *props)
 						       obs_module_text("GoalBar.Platform"), OBS_COMBO_TYPE_LIST,
 						       OBS_COMBO_FORMAT_STRING);
 	const std::pair<Platform, const char *> platforms[] = {{Platform::Manual, "Platform.Manual"},
-							       {Platform::YouTube, "Platform.YouTube"}};
+							       {Platform::YouTube, "Platform.YouTube"},
+							       {Platform::Twitch, "Platform.Twitch"}};
 	for (const auto &[platform, label] : platforms)
 		obs_property_list_add_string(list, obs_module_text(label), std::string(platform_id(platform)).c_str());
 	obs_property_set_modified_callback(list, platform_changed);
@@ -570,6 +644,11 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 	add_platform_list(props);
 	obs_properties_add_text(props, kChannelKey, obs_module_text("GoalBar.Channel"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(props, kTwitchStatusKey, obs_module_text("GoalBar.Twitch.NotConnected"), OBS_TEXT_INFO);
+	obs_properties_add_button2(props, kTwitchConnectKey, obs_module_text("GoalBar.Twitch.Connect"),
+				   twitch_connect_clicked, nullptr);
+	obs_properties_add_button2(props, kTwitchDisconnectKey, obs_module_text("GoalBar.Twitch.Disconnect"),
+				   twitch_disconnect_clicked, nullptr);
 	obs_properties_add_text(props, kTitleKey, obs_module_text("GoalBar.Title"), OBS_TEXT_DEFAULT);
 	add_metric_list(props);
 	obs_properties_add_text(props, kSubsNoticeKey, obs_module_text("GoalBar.SubsNotice"), OBS_TEXT_INFO);

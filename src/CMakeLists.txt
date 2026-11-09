@@ -5,6 +5,16 @@
 file(READ "${CMAKE_CURRENT_LIST_DIR}/../buildspec.json" goal_bar_buildspec)
 string(JSON goal_bar_version GET "${goal_bar_buildspec}" version)
 
+# JSON parsing for the Twitch API answers (header only, pinned like multi-stream).
+include(FetchContent)
+FetchContent_Declare(
+  nlohmann_json_header
+  URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.hpp
+  URL_HASH SHA256=aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63
+  DOWNLOAD_NO_EXTRACT TRUE
+)
+FetchContent_MakeAvailable(nlohmann_json_header)
+
 add_library(
   goal-bar-core STATIC
   core/action_sequence.cpp
@@ -20,9 +30,12 @@ add_library(
   core/poll_schedule.cpp
   core/style_preset.cpp
   core/subscriber_rounding.cpp
+  core/twitch_auth.cpp
+  core/twitch_helix.cpp
   core/version.cpp
   core/youtube_page.cpp)
 target_include_directories(goal-bar-core PUBLIC "${CMAKE_CURRENT_LIST_DIR}")
+target_include_directories(goal-bar-core SYSTEM PRIVATE "${nlohmann_json_header_SOURCE_DIR}")
 target_compile_definitions(goal-bar-core PRIVATE GOAL_BAR_VERSION="${goal_bar_version}")
 target_compile_features(goal-bar-core PUBLIC cxx_std_17)
 set_target_properties(goal-bar-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -30,6 +43,7 @@ set_target_properties(goal-bar-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # Metric provider adapters. Plain C++ and threads: HTTP and logging are injected
 # by the OBS adapter, so the tests can drive them with fakes.
 find_package(Threads REQUIRED)
-add_library(goal-bar-providers STATIC providers/youtube_public_provider.cpp)
+add_library(goal-bar-providers STATIC providers/twitch_account.cpp providers/twitch_provider.cpp
+                                      providers/youtube_public_provider.cpp)
 target_link_libraries(goal-bar-providers PUBLIC goal-bar-core Threads::Threads)
 set_target_properties(goal-bar-providers PROPERTIES POSITION_INDEPENDENT_CODE ON)

@@ -143,9 +143,9 @@ Response cancelled_response()
 	return res;
 }
 
-} // namespace
-
-Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
+// `body` is null for GET; otherwise it is sent as a form-encoded POST body.
+Response perform(const wchar_t *method, const std::string &url, Headers headers, const std::string *body,
+		 int timeout_ms, CancelToken *cancel)
 {
 	Response res;
 	Url u;
@@ -162,7 +162,7 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms, Can
 		res.error = last_error("WinHttpConnect");
 		return res;
 	}
-	Handle request(WinHttpOpenRequest(connection, L"GET", u.path.c_str(), nullptr, WINHTTP_NO_REFERER,
+	Handle request(WinHttpOpenRequest(connection, method, u.path.c_str(), nullptr, WINHTTP_NO_REFERER,
 					  WINHTTP_DEFAULT_ACCEPT_TYPES, u.secure ? WINHTTP_FLAG_SECURE : 0));
 	if (!request) {
 		res.error = last_error("WinHttpOpenRequest");
@@ -172,9 +172,13 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms, Can
 	if (!cancel_guard.hook.armed())
 		return cancelled_response();
 	WinHttpSetTimeouts(request, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
+	if (body)
+		headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
 	const std::wstring block = header_block(headers);
+	LPVOID data = body ? const_cast<char *>(body->data()) : WINHTTP_NO_REQUEST_DATA;
+	const DWORD length = body ? (DWORD)body->size() : 0;
 	if (!WinHttpSendRequest(request, block.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : block.c_str(),
-				block.empty() ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+				block.empty() ? 0 : (DWORD)-1L, data, length, length, 0) ||
 	    !WinHttpReceiveResponse(request, nullptr)) {
 		if (cancel_guard.disarm())
 			return cancelled_response();
@@ -204,6 +208,19 @@ Response get(const std::string &url, const Headers &headers, int timeout_ms, Can
 	if (cancel_guard.disarm())
 		return cancelled_response();
 	return res;
+}
+
+} // namespace
+
+Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
+{
+	return perform(L"GET", url, headers, nullptr, timeout_ms, cancel);
+}
+
+Response post_form(const std::string &url, const std::string &body, const Headers &headers, int timeout_ms,
+		   CancelToken *cancel)
+{
+	return perform(L"POST", url, headers, &body, timeout_ms, cancel);
 }
 
 } // namespace goalbar::net

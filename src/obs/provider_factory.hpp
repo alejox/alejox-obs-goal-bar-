@@ -13,4 +13,8 @@ namespace goalbar::obs {
 // normalize_youtube_channel). It starts polling at once.
 std::unique_ptr<MetricProvider> make_youtube_provider(const std::string &channel_url, Metric metric);
 
+// A Twitch provider for Followers or Subscribers on the shared account. It
+// starts polling at once and waits quietly while no account is connected.
+std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric);
+
 } // namespace goalbar::obs
