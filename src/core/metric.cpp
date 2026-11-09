@@ -11,13 +11,15 @@ std::string_view metric_id(Metric metric)
 		return "subscribers";
 	case Metric::Followers:
 		return "followers";
+	case Metric::Viewers:
+		return "viewers";
 	}
 	return "likes";
 }
 
 std::optional<Metric> metric_from_id(std::string_view id)
 {
-	for (Metric metric : {Metric::Likes, Metric::Subscribers, Metric::Followers}) {
+	for (Metric metric : {Metric::Likes, Metric::Subscribers, Metric::Followers, Metric::Viewers}) {
 		if (metric_id(metric) == id)
 			return metric;
 	}
@@ -33,13 +35,15 @@ std::string_view platform_id(Platform platform)
 		return "youtube";
 	case Platform::Twitch:
 		return "twitch";
+	case Platform::Kick:
+		return "kick";
 	}
 	return "manual";
 }
 
 std::optional<Platform> platform_from_id(std::string_view id)
 {
-	for (Platform platform : {Platform::Manual, Platform::YouTube, Platform::Twitch}) {
+	for (Platform platform : {Platform::Manual, Platform::YouTube, Platform::Twitch, Platform::Kick}) {
 		if (platform_id(platform) == id)
 			return platform;
 	}

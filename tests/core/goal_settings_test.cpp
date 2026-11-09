@@ -54,7 +54,7 @@ TEST_CASE(malformed_values_fall_back_to_defaults)
 		{"goal_current", "12abc"},
 		{"goal_reached_fired", "maybe"},
 		{"metric", "views"},
-		{"platform", "kick"},
+		{"platform", "tiktok"},
 		{"goal_step", "99999999999999999999999"},
 	};
 	const GoalSettings decoded = decode_goal_settings(values);

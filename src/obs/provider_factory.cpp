@@ -1,7 +1,9 @@
 #include "obs/provider_factory.hpp"
 
 #include "net/net.hpp"
+#include "obs/kick_services.hpp"
 #include "obs/twitch_services.hpp"
+#include "providers/kick_provider.hpp"
 #include "providers/twitch_provider.hpp"
 #include "providers/youtube_public_provider.hpp"
 
@@ -39,6 +41,11 @@ std::unique_ptr<MetricProvider> make_youtube_provider(const std::string &channel
 std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric)
 {
 	return std::make_unique<TwitchProvider>(twitch_account(), metric, log_provider);
+}
+
+std::unique_ptr<MetricProvider> make_kick_provider(const std::string &slug, Metric metric)
+{
+	return std::make_unique<KickProvider>(kick_account(), slug, metric, log_provider);
 }
 
 } // namespace goalbar::obs
