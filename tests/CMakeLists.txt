@@ -57,8 +57,6 @@ add_core_test(twitch_provider_test core/twitch_provider_test.cpp)
 target_link_libraries(twitch_provider_test PRIVATE goal-bar-providers)
 add_core_test(sha256_test core/sha256_test.cpp)
 add_core_test(kick_api_test core/kick_api_test.cpp)
-add_core_test(kick_account_test core/kick_account_test.cpp)
-target_link_libraries(kick_account_test PRIVATE goal-bar-providers)
 add_core_test(kick_provider_test core/kick_provider_test.cpp)
 target_link_libraries(kick_provider_test PRIVATE goal-bar-providers)
 

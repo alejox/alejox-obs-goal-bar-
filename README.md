@@ -17,7 +17,7 @@
 | 📊 | **Fuente «Barra de meta»** | Una fuente de OBS con título, valor actual / meta y una barra que se llena con una animación suave. Tres estilos (Minimalista, Intenso, Neón), color de acento y tamaño |
 | ▶️ | **YouTube, modo público** | Lee los me gusta y los suscriptores del directo desde la página pública del canal (`@usuario`), sin iniciar sesión |
 | 🟣 | **Twitch** | Seguidores y suscriptores con la API oficial. Conectas tu cuenta con un código en twitch.tv/activate |
-| 🟢 | **Kick** | Espectadores y suscriptores activos de cualquier canal con la API oficial de Kick, usando tu propia app de Kick (sin ventana de inicio de sesión) |
+| 🟢 | **Kick** | Seguidores y espectadores de cualquier canal, sin cuenta ni app de Kick (endpoint público no documentado, ver abajo) |
 | ✍️ | **Modo manual** | Escribes el valor actual a mano; siempre disponible |
 | 🎉 | **Celebración** | Al cumplir la meta: brillo y confeti sobre la barra |
 | 🎬 | **Mostrar una fuente** | Muestra una fuente de la escena (imagen, texto, audio o video). Audio y video se reproducen desde el inicio y se ocultan al terminar |
@@ -81,7 +81,7 @@ tar -xzf obs-goal-bar-<versión>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plu
 ## 🚀 Uso en 5 pasos
 
 1. **Añade la fuente.** En una escena, pulsa **+** y elige **Barra de meta**.
-2. **Elige la plataforma.** **Manual**, **YouTube** (escribe tu `@usuario`), **Twitch** (pulsa **Conectar Twitch** e ingresa el código en twitch.tv/activate) o **Kick** (escribe el nombre del canal y configura tu app de Kick una vez; ver abajo).
+2. **Elige la plataforma.** **Manual**, **YouTube** (escribe tu `@usuario`), **Twitch** (pulsa **Conectar Twitch** e ingresa el código en twitch.tv/activate) o **Kick** (escribe el nombre del canal; ver abajo).
 3. **Fija la meta.** Elige la métrica y escribe la **Meta**.
 4. **Decide qué pasa al cumplirla.** En **Al cumplir la meta**: animación, una fuente para mostrar y la siguiente meta automática. Pulsa **Probar celebración** para verlo.
 5. **Asigna atajos (opcional).** En **Ajustes > Atajos**, busca la fuente y asigna «Probar celebración» y «Reiniciar meta».
@@ -89,16 +89,13 @@ tar -xzf obs-goal-bar-<versión>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plu
 > [!TIP]
 > **Reiniciar meta** empieza la barra de nuevo desde el valor actual. Nunca dispara la celebración, aunque el valor ya esté en la meta.
 
-### 🟢 Configurar Kick (una sola vez)
+### 🟢 Kick
 
-La API oficial de Kick solo responde a apps, así que Goal Bar usa una app de Kick que creas tú. Toma dos minutos y después no requiere iniciar sesión en el navegador.
+Elige **Kick** y escribe el nombre del canal (o pega su URL de kick.com). No hace falta cuenta, app ni credenciales de Kick.
 
-1. Abre [kick.com/settings/developer](https://kick.com/settings/developer) (con tu sesión de Kick iniciada) y crea una app. Sirve cualquier nombre; como URL de redirección puedes usar `http://localhost`. No necesita permisos (scopes).
-2. Copia el **Client ID** y el **Client Secret** de la app.
-3. En las propiedades de Goal Bar, elige **Kick**, escribe el nombre del canal (o pega su URL de kick.com) y pulsa **Cuenta de Kick…**.
-4. Pega ambos valores y pulsa **Guardar y probar**. «Funciona» significa que Kick los aceptó.
+Métricas: **Seguidores** (disponibles en todo momento) y **Espectadores** (se muestran mientras el canal está en directo; si no, «Sin directo»). Los suscriptores de pago no se ofrecen: Kick no los publica en este endpoint. La barra se actualiza cada 20 segundos aproximadamente y espera más (hasta 5 minutos) si Kick limita o bloquea las solicitudes.
 
-Métricas: **Espectadores** (se muestran mientras el canal está en directo; si no, «Sin directo») y **Suscriptores** (suscriptores activos, disponibles en todo momento). Los seguidores no están en la API oficial de Kick, por eso no se ofrecen. La barra se actualiza cada 20 segundos aproximadamente y espera más si Kick limita las solicitudes.
+> ⚠️ Los datos de Kick vienen de un endpoint público **no documentado** (`kick.com/api/v2/channels/<canal>`), el mismo que usa la web de Kick. No forma parte de su API oficial, está detrás de Cloudflare y puede cambiar o dejar de funcionar en cualquier momento. Si Kick bloquea la solicitud, la barra muestra «Kick bloqueó la solicitud» en lugar de un valor falso.
 
 ---
 
@@ -139,7 +136,6 @@ ctest --test-dir build_tests --output-on-failure
 | Dato | Dónde queda |
 |------|-------------|
 | Sesión de Twitch | El token de renovación vive en el Llavero de macOS; el token de acceso, solo en memoria |
-| App de Kick | El Client ID y el Client Secret viven en el Llavero de macOS (Administrador de credenciales en Windows, Secret Service en Linux), nunca en los archivos de escena; el token de acceso de la app, solo en memoria |
 | YouTube | Se lee la página pública del directo; no hay inicio de sesión ni claves |
 | Todo lo demás | El plugin solo habla con youtube.com, twitch.tv, kick.com y github.com (para buscar actualizaciones). No envía datos a ningún otro sitio |
 

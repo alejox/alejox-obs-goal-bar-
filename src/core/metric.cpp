@@ -50,4 +50,32 @@ std::optional<Platform> platform_from_id(std::string_view id)
 	return std::nullopt;
 }
 
+bool platform_reads(Platform platform, Metric metric)
+{
+	switch (platform) {
+	case Platform::YouTube:
+		return metric == Metric::Likes || metric == Metric::Subscribers;
+	case Platform::Twitch:
+		return metric == Metric::Followers || metric == Metric::Subscribers;
+	case Platform::Kick:
+		return metric == Metric::Followers || metric == Metric::Viewers;
+	case Platform::Manual:
+		return metric != Metric::Viewers;
+	}
+	return false;
+}
+
+Metric readable_metric(Platform platform, Metric metric)
+{
+	if (platform_reads(platform, metric))
+		return metric;
+	switch (platform) {
+	case Platform::Twitch:
+	case Platform::Kick:
+		return Metric::Followers;
+	default:
+		return Metric::Likes;
+	}
+}
+
 } // namespace goalbar
