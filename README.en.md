@@ -17,6 +17,7 @@
 | 📊 | **"Goal Bar" source** | An OBS source with a title, current value / goal and a bar that fills with a smooth animation. Three styles (Minimal, Bold, Neon), accent color and size |
 | ▶️ | **YouTube, public mode** | Reads the live stream's likes and subscribers from the channel's public page (`@handle`), no sign-in |
 | 🟣 | **Twitch** | Followers and subscribers through the official API. Connect your account with a code on twitch.tv/activate |
+| 🟢 | **Kick** | Viewers and active subscribers of any channel through Kick's official API, with your own Kick app (no sign-in window) |
 | ✍️ | **Manual mode** | Type the current value yourself; always available |
 | 🎉 | **Celebration** | When the goal is reached: a glow and confetti over the bar |
 | 🎬 | **Show a source** | Shows a scene source (image, text, audio or video). Audio and video play from the start and hide when they end |
@@ -80,13 +81,24 @@ tar -xzf obs-goal-bar-<version>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plug
 ## 🚀 Usage in 5 steps
 
 1. **Add the source.** In a scene, click **+** and pick **Goal Bar**.
-2. **Pick the platform.** **Manual**, **YouTube** (type your `@handle`) or **Twitch** (click **Connect Twitch** and enter the code on twitch.tv/activate).
+2. **Pick the platform.** **Manual**, **YouTube** (type your `@handle`), **Twitch** (click **Connect Twitch** and enter the code on twitch.tv/activate) or **Kick** (type the channel name and set up your Kick app once, see below).
 3. **Set the goal.** Choose the metric and type the **Goal**.
 4. **Decide what happens when it is reached.** Under **When the goal is reached**: the animation, a source to show and the auto next goal. Click **Test celebration** to preview it.
 5. **Assign hotkeys (optional).** In **Settings > Hotkeys**, find the source and bind "Test celebration" and "Reset goal".
 
 > [!TIP]
 > **Reset goal** starts the bar over from the current value. It never fires the celebration, even when the value is already at the goal.
+
+### 🟢 Set up Kick (once)
+
+Kick's official API only answers apps, so Goal Bar uses a Kick app that you create yourself. It takes two minutes and needs no browser sign-in afterwards.
+
+1. Open [kick.com/settings/developer](https://kick.com/settings/developer) (signed in to Kick) and create an app. Any name works; for the redirect URL, `http://localhost` is fine. No scopes are needed.
+2. Copy the app's **Client ID** and **Client Secret**.
+3. In the Goal Bar properties, pick **Kick**, type the channel name (or paste its kick.com URL) and click **Kick account…**.
+4. Paste both values and click **Save and test**. "It works" means Kick accepted them.
+
+Metrics: **Viewers** (shown while the channel is live; "Offline" otherwise) and **Subscribers** (active subscribers, readable at any time). Followers are not in Kick's official API, so they are not offered. The bar refreshes about every 20 seconds and slows down if Kick limits requests.
 
 ---
 
@@ -127,8 +139,9 @@ ctest --test-dir build_tests --output-on-failure
 | Data | Where it stays |
 |------|----------------|
 | Twitch login | The refresh token lives in the macOS Keychain; the access token only in memory |
+| Kick app | The Client ID and Client Secret live in the macOS Keychain (Windows Credential Manager, Linux Secret Service), never in scene files; the app access token only in memory |
 | YouTube | The public live page is read; no sign-in, no keys |
-| Everything else | The plugin only talks to youtube.com, twitch.tv and github.com (to check for updates). It sends no data anywhere else |
+| Everything else | The plugin only talks to youtube.com, twitch.tv, kick.com and github.com (to check for updates). It sends no data anywhere else |
 
 ---
 

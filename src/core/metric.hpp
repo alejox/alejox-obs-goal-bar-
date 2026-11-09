@@ -6,9 +6,9 @@
 
 namespace goalbar {
 
-enum class Metric { Likes, Subscribers, Followers };
+enum class Metric { Likes, Subscribers, Followers, Viewers };
 
-enum class Platform { Manual, YouTube, Twitch };
+enum class Platform { Manual, YouTube, Twitch, Kick };
 
 // Stable ids used for settings persistence. Never change an existing id.
 std::string_view metric_id(Metric metric);

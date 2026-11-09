@@ -3,15 +3,18 @@
 #include "core/goal_reading.hpp"
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
+#include "core/kick_api.hpp"
 #include "core/progress_tween.hpp"
 #include "core/style_preset.hpp"
 #include "core/subscriber_rounding.hpp"
 #include "core/youtube_page.hpp"
 #include "obs/goal_actions.hpp"
+#include "obs/kick_services.hpp"
 #include "obs/provider_factory.hpp"
 #include "obs/twitch_services.hpp"
 #include "providers/twitch_provider.hpp"
 #include "render/goal_bar_painter.hpp"
+#include "ui/kick_account_dialog.hpp"
 #include "ui/twitch_connect_dialog.hpp"
 
 #include <obs-frontend-api.h>
@@ -48,6 +51,9 @@ constexpr const char *kSubsNoticeKey = "youtube_subs_notice";
 constexpr const char *kTwitchStatusKey = "twitch_account_status";
 constexpr const char *kTwitchConnectKey = "twitch_connect";
 constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
+constexpr const char *kKickChannelKey = "kick_channel";
+constexpr const char *kKickStatusKey = "kick_account_status";
+constexpr const char *kKickAccountKey = "kick_account";
 // Bumped on every goal change made by the plugin itself (provider reading,
 // auto next goal, reset). A settings object with an older revision is a stale
 // snapshot, e.g. the one the properties dialog restores on Cancel.
@@ -67,7 +73,7 @@ constexpr const char *kIntGoalKeys[] = {settings_key::kStart, settings_key::kTar
 struct ProviderKey {
 	Platform platform = Platform::Manual;
 	Metric metric = Metric::Likes;
-	std::string channel_url; // canonical, empty when invalid
+	std::string channel_url; // canonical YouTube URL or Kick slug, empty when invalid
 
 	bool operator==(const ProviderKey &other) const
 	{
@@ -169,10 +175,19 @@ std::string status_text(const MetricReading &reading)
 	case ProviderState::NotLive:
 		return obs_module_text("GoalBar.Status.Offline");
 	case ProviderState::AuthRequired:
+		if (reading.message == kKickNotSetUp)
+			return obs_module_text("GoalBar.Status.KickNotSetUp");
+		if (reading.message == kKickBadCredentials)
+			return obs_module_text("GoalBar.Status.KickRejected");
 		return obs_module_text("GoalBar.Status.AuthRequired");
+	case ProviderState::RateLimited:
+		return obs_module_text("GoalBar.Status.RateLimited");
 	case ProviderState::Error:
-		return reading.message == kTwitchNeedsAffiliate ? obs_module_text("GoalBar.Status.NeedsAffiliate")
-								 : obs_module_text("GoalBar.Status.Error");
+		if (reading.message == kTwitchNeedsAffiliate)
+			return obs_module_text("GoalBar.Status.NeedsAffiliate");
+		if (reading.message == kKickChannelNotFound)
+			return obs_module_text("GoalBar.Status.ChannelNotFound");
+		return obs_module_text("GoalBar.Status.Error");
 	default:
 		return obs_module_text("GoalBar.Status.Error");
 	}
@@ -246,21 +261,48 @@ GoalEvent apply_goal_change(GoalBarSource &self, obs_data_t *settings, GoalSetti
 	return event;
 }
 
+// Which metrics each platform can read. Manual takes any value but viewers.
+bool metric_readable(Platform platform, Metric metric)
+{
+	switch (platform) {
+	case Platform::YouTube:
+		return metric == Metric::Likes || metric == Metric::Subscribers;
+	case Platform::Twitch:
+		return metric == Metric::Followers || metric == Metric::Subscribers;
+	case Platform::Kick:
+		return metric == Metric::Viewers || metric == Metric::Subscribers;
+	case Platform::Manual:
+		return metric != Metric::Viewers;
+	}
+	return false;
+}
+
+Metric first_metric(Platform platform)
+{
+	switch (platform) {
+	case Platform::Twitch:
+		return Metric::Followers;
+	case Platform::Kick:
+		return Metric::Viewers;
+	default:
+		return Metric::Likes;
+	}
+}
+
 // Each platform reads only some metrics; an unreadable one falls back to the
 // platform's first metric and the choice is persisted.
 ProviderKey read_provider_key(obs_data_t *settings)
 {
 	const GoalSettings decoded = decode_goal_settings(read_goal_settings(settings));
 	ProviderKey key{decoded.platform, decoded.metric, {}};
-	const bool youtube_followers = key.platform == Platform::YouTube && key.metric == Metric::Followers;
-	const bool twitch_likes = key.platform == Platform::Twitch && key.metric == Metric::Likes;
-	if (youtube_followers || twitch_likes) {
-		key.metric = youtube_followers ? Metric::Likes : Metric::Followers;
+	if (!metric_readable(key.platform, key.metric)) {
+		key.metric = first_metric(key.platform);
 		obs_data_set_string(settings, settings_key::kMetric, std::string(metric_id(key.metric)).c_str());
 	}
-	if (key.platform != Platform::YouTube)
-		return key;
-	key.channel_url = normalize_youtube_channel(obs_data_get_string(settings, kChannelKey)).value_or("");
+	if (key.platform == Platform::YouTube)
+		key.channel_url = normalize_youtube_channel(obs_data_get_string(settings, kChannelKey)).value_or("");
+	if (key.platform == Platform::Kick)
+		key.channel_url = normalize_kick_slug(obs_data_get_string(settings, kKickChannelKey)).value_or("");
 	return key;
 }
 
@@ -271,6 +313,9 @@ std::string describe_provider(const ProviderKey &key)
 		return key.channel_url.empty() ? "YouTube (no channel)" : key.channel_url;
 	case Platform::Twitch:
 		return std::string("Twitch ") + std::string(metric_id(key.metric));
+	case Platform::Kick:
+		return key.channel_url.empty() ? "Kick (no channel)"
+					       : "Kick " + key.channel_url + " " + std::string(metric_id(key.metric));
 	default:
 		return "manual";
 	}
@@ -291,7 +336,9 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 			next = make_youtube_provider(key.channel_url, key.metric);
 		if (key.platform == Platform::Twitch)
 			next = make_twitch_provider(key.metric);
-		if (key.platform == Platform::YouTube)
+		if (key.platform == Platform::Kick && !key.channel_url.empty())
+			next = make_kick_provider(key.channel_url, key.metric);
+		if (key.platform == Platform::YouTube || key.platform == Platform::Kick)
 			status = next ? obs_module_text("GoalBar.Status.Connecting")
 				      : obs_module_text("GoalBar.Status.NoChannel");
 		if (key.platform == Platform::Twitch)
@@ -621,6 +668,7 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_string(settings, settings_key::kPlatform,
 				    std::string(platform_id(defaults.platform)).c_str());
 	obs_data_set_default_string(settings, kChannelKey, "");
+	obs_data_set_default_string(settings, kKickChannelKey, "");
 	obs_data_set_default_string(settings, kStyleKey, std::string(style_preset_id(StylePreset::Minimal)).c_str());
 	obs_data_set_default_int(settings, kAccentKey, kDefaultAccent);
 	obs_data_set_default_int(settings, kTextColorKey, kDefaultTextColor);
@@ -639,12 +687,11 @@ void fill_metric_list(obs_property_t *list, Platform platform)
 {
 	obs_property_list_clear(list);
 	const std::pair<Metric, const char *> metrics[] = {{Metric::Likes, "Metric.Likes"},
+							   {Metric::Viewers, "Metric.Viewers"},
 							   {Metric::Subscribers, "Metric.Subscribers"},
 							   {Metric::Followers, "Metric.Followers"}};
 	for (const auto &[metric, label] : metrics) {
-		const bool unreadable = (platform == Platform::YouTube && metric == Metric::Followers) ||
-					(platform == Platform::Twitch && metric == Metric::Likes);
-		if (!unreadable)
+		if (metric_readable(platform, metric))
 			obs_property_list_add_string(list, obs_module_text(label),
 						     std::string(metric_id(metric)).c_str());
 	}
@@ -690,6 +737,30 @@ bool twitch_disconnect_clicked(obs_properties_t *props, obs_property_t *, void *
 	return true;
 }
 
+// Shows whether the Kick app is set up. Reads the secret store only when Kick
+// is selected.
+void update_kick_account(obs_properties_t *props, bool kick)
+{
+	obs_property_t *status = obs_properties_get(props, kKickStatusKey);
+	if (kick) {
+		const KickAccount::Status account = kick_account()->status();
+		const char *line = account.rejected     ? "GoalBar.Kick.Rejected"
+				   : account.configured ? "GoalBar.Kick.Ready"
+							: "GoalBar.Kick.NotSetUp";
+		obs_property_set_description(status, obs_module_text(line));
+	}
+	obs_property_set_visible(status, kick);
+	obs_property_set_visible(obs_properties_get(props, kKickAccountKey), kick);
+}
+
+bool kick_account_clicked(obs_properties_t *props, obs_property_t *, void *)
+{
+	auto *parent = static_cast<QWidget *>(obs_frontend_get_main_window());
+	ui::run_kick_account_dialog(parent, kick_account());
+	update_kick_account(props, true);
+	return true;
+}
+
 bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
 	const bool subs = metric_from_id(obs_data_get_string(settings, settings_key::kMetric)) == Metric::Subscribers;
@@ -703,7 +774,9 @@ bool platform_changed(obs_properties_t *props, obs_property_t *property, obs_dat
 	const Platform platform = selected_platform(settings);
 	obs_property_set_visible(obs_properties_get(props, kChannelKey), platform == Platform::YouTube);
 	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent), platform == Platform::Manual);
+	obs_property_set_visible(obs_properties_get(props, kKickChannelKey), platform == Platform::Kick);
 	update_twitch_account(props, platform == Platform::Twitch);
+	update_kick_account(props, platform == Platform::Kick);
 	fill_metric_list(obs_properties_get(props, settings_key::kMetric), selected_platform(settings));
 	return metric_changed(props, property, settings);
 }
@@ -715,7 +788,8 @@ void add_platform_list(obs_properties_t *props)
 						       OBS_COMBO_FORMAT_STRING);
 	const std::pair<Platform, const char *> platforms[] = {{Platform::Manual, "Platform.Manual"},
 							       {Platform::YouTube, "Platform.YouTube"},
-							       {Platform::Twitch, "Platform.Twitch"}};
+							       {Platform::Twitch, "Platform.Twitch"},
+							       {Platform::Kick, "Platform.Kick"}};
 	for (const auto &[platform, label] : platforms)
 		obs_property_list_add_string(list, obs_module_text(label), std::string(platform_id(platform)).c_str());
 	obs_property_set_modified_callback(list, platform_changed);
@@ -750,6 +824,10 @@ obs_properties_t *goal_bar_properties(void *data)
 				   twitch_connect_clicked, nullptr);
 	obs_properties_add_button2(props, kTwitchDisconnectKey, obs_module_text("GoalBar.Twitch.Disconnect"),
 				   twitch_disconnect_clicked, nullptr);
+	obs_properties_add_text(props, kKickChannelKey, obs_module_text("GoalBar.Kick.Channel"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(props, kKickStatusKey, obs_module_text("GoalBar.Kick.NotSetUp"), OBS_TEXT_INFO);
+	obs_properties_add_button2(props, kKickAccountKey, obs_module_text("GoalBar.Kick.Account"),
+				   kick_account_clicked, nullptr);
 	obs_properties_add_text(props, kTitleKey, obs_module_text("GoalBar.Title"), OBS_TEXT_DEFAULT);
 	add_metric_list(props);
 	obs_properties_add_text(props, kSubsNoticeKey, obs_module_text("GoalBar.SubsNotice"), OBS_TEXT_INFO);

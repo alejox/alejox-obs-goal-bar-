@@ -17,4 +17,9 @@ std::unique_ptr<MetricProvider> make_youtube_provider(const std::string &channel
 // starts polling at once and waits quietly while no account is connected.
 std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric);
 
+// A Kick provider for Viewers or Subscribers of a normalized channel slug, on
+// the shared Kick app. It starts polling at once and waits quietly while the
+// app is not set up.
+std::unique_ptr<MetricProvider> make_kick_provider(const std::string &slug, Metric metric);
+
 } // namespace goalbar::obs

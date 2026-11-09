@@ -28,6 +28,7 @@ add_library(
   core/goal_reading.cpp
   core/goal_settings.cpp
   core/goal_view.cpp
+  core/kick_api.cpp
   core/manual_provider.cpp
   core/metric.cpp
   core/poll_schedule.cpp
@@ -48,8 +49,9 @@ set_target_properties(goal-bar-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # Metric provider adapters. Plain C++ and threads: HTTP and logging are injected
 # by the OBS adapter, so the tests can drive them with fakes.
 find_package(Threads REQUIRED)
-add_library(goal-bar-providers STATIC providers/twitch_account.cpp providers/twitch_provider.cpp
-                                      providers/youtube_public_provider.cpp)
+add_library(
+  goal-bar-providers STATIC providers/kick_account.cpp providers/kick_provider.cpp providers/twitch_account.cpp
+                            providers/twitch_provider.cpp providers/youtube_public_provider.cpp)
 target_link_libraries(goal-bar-providers PUBLIC goal-bar-core Threads::Threads)
 set_target_properties(goal-bar-providers PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

@@ -40,11 +40,13 @@ target_sources(
     src/plugin_main.cpp
     src/obs/goal_actions.cpp
     src/obs/goal_bar_source.cpp
+    src/obs/kick_services.cpp
     src/obs/obs_shutdown.cpp
     src/obs/provider_factory.cpp
     src/obs/twitch_services.cpp
     src/render/goal_bar_painter.cpp
     src/secrets/platform_secret_store.cpp
+    src/ui/kick_account_dialog.cpp
     src/ui/twitch_connect_dialog.cpp
     src/ui/update_controller.cpp
     src/update/update_service.cpp
