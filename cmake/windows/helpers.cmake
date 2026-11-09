@@ -25,7 +25,9 @@ function(set_target_properties_plugin target)
   target_install_resources(${target})
 
   # The plugin is a MODULE library, which CMake installs as a LIBRARY artifact on every platform.
-  install(TARGETS ${target} LIBRARY DESTINATION .)
+  # OBS loads third-party plugins from C:\ProgramData\obs-studio\plugins\<name>\bin\64bit\<name>.dll
+  # with their data in ...\<name>\data (https://obsproject.com/kb/plugins-guide).
+  install(TARGETS ${target} LIBRARY DESTINATION bin/64bit)
 endfunction()
 
 # target_install_resources: Install the data directory beside the plugin DLL

@@ -53,6 +53,28 @@ xattr -dr com.apple.quarantine ~/Library/Application\ Support/obs-studio/plugins
 
 **Desinstalar:** borra `~/Library/Application Support/obs-studio/plugins/obs-goal-bar.plugin`.
 
+## 🪟🐧 Instalación (Windows / Linux, desde GitHub Releases)
+
+Cierra OBS primero y descarga el paquete de tu sistema desde la página de GitHub Releases. Cada paquete trae también sus pasos en `INSTALL.txt`.
+
+| Sistema | Paquete | Extraer en | Resultado |
+|---------|---------|------------|-----------|
+| Windows x64 | `obs-goal-bar-<versión>-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` | `...\plugins\obs-goal-bar\bin\64bit\obs-goal-bar.dll` |
+| Linux x86_64 | `obs-goal-bar-<versión>-linux-x86_64.tar.gz` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-goal-bar/bin/64bit/obs-goal-bar.so` |
+
+En Linux:
+
+```bash
+mkdir -p ~/.config/obs-studio/plugins
+tar -xzf obs-goal-bar-<versión>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plugins
+```
+
+- Windows necesita OBS 33 o posterior. El token de renovación de Twitch se guarda en el Administrador de credenciales de Windows.
+- Linux se compila en Ubuntu 24.04 contra la versión de OBS del PPA del OBS Project. El inicio de sesión de Twitch necesita `libsecret` y un Secret Service activo (GNOME Keyring o KWallet).
+- Ambos están compilados y con pruebas unitarias en CI; todavía no se han ejecutado dentro de OBS.
+
+**Desinstalar:** borra la carpeta `obs-goal-bar` de la carpeta de plugins indicada arriba.
+
 ---
 
 ## 🚀 Uso en 5 pasos
@@ -101,7 +123,7 @@ ctest --test-dir build_tests --output-on-failure
 
 ## 🧭 Estado
 
-macOS (Apple Silicon) primero. Windows y Linux llegan pronto.
+macOS (Apple Silicon) está probado dentro de OBS. Windows x64 y Linux x86_64 se compilan, prueban y empaquetan solo en CI (GitHub Actions).
 
 ## Licencia
 

@@ -6,6 +6,7 @@
 #include "secrets/secret_store.hpp"
 
 #include <string>
+#include <utility>
 
 namespace goalbar {
 

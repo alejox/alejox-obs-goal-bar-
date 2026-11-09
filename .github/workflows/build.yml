@@ -1,0 +1,131 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - feat/goal-bar
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore OBS dependencies
+        id: restore-deps
+        uses: actions/cache/restore@v6
+        with:
+          path: .deps
+          key: deps-windows-x64-${{ hashFiles('buildspec.json', 'cmake/common/buildspec_common.cmake', 'cmake/windows/buildspec.cmake') }}
+
+      - name: Configure
+        run: cmake --preset windows-x64
+
+      # Saved right after configure, which builds libobs, so that a plugin compile error
+      # does not throw away the slowest step of the job.
+      - name: Save OBS dependencies
+        if: steps.restore-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .deps
+          key: ${{ steps.restore-deps.outputs.cache-primary-key }}
+
+      - name: Build
+        run: cmake --build --preset windows-x64
+
+      - name: Test
+        run: |
+          cmake -S tests -B build_tests -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build_tests --config RelWithDebInfo --parallel
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --test-dir build_tests -C RelWithDebInfo --output-on-failure
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package
+        run: |
+          $version = (Get-Content buildspec.json -Raw | ConvertFrom-Json).version
+          $package = "obs-goal-bar-$version-windows-x64.zip"
+          cmake --install build_windows --config RelWithDebInfo --prefix stage/obs-goal-bar
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if (-not (Test-Path stage/obs-goal-bar/bin/64bit/obs-goal-bar.dll)) {
+            Get-ChildItem -Recurse stage | Select-Object -ExpandProperty FullName
+            throw "obs-goal-bar.dll is missing from the install tree"
+          }
+          @(
+            "OBS Goal Bar $version for Windows x64, built against OBS 33.0.1."
+            "Close OBS, then extract the obs-goal-bar folder into:"
+            "  C:\ProgramData\obs-studio\plugins\"
+            "The Twitch refresh token is kept in the Windows Credential Manager."
+          ) | Set-Content stage/obs-goal-bar/INSTALL.txt
+          Compress-Archive -Path stage/obs-goal-bar -DestinationPath $package
+          "PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: obs-goal-bar-windows-x64
+          path: ${{ env.PACKAGE }}
+          if-no-files-found: error
+
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # libobs and obs-frontend-api come from the OBS Project PPA, which only keeps its latest
+      # build, so the OBS version is whatever it publishes for this Ubuntu release. The
+      # Package step records that version in INSTALL.txt.
+      - name: Install dependencies
+        run: |
+          sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libcurl4-openssl-dev libsecret-1-dev libsimde-dev ninja-build obs-studio pkg-config qt6-base-dev
+          dpkg-query --show obs-studio
+
+      - name: Configure
+        run: cmake --preset linux-x86_64
+
+      - name: Build
+        run: cmake --build --preset linux-x86_64
+
+      - name: Test
+        run: |
+          cmake -S tests -B build_tests -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build_tests
+          ctest --test-dir build_tests --output-on-failure
+
+      - name: Package
+        run: |
+          version="$(jq -r .version buildspec.json)"
+          obs_version="$(dpkg-query --show --showformat='${Version}' obs-studio)"
+          package="obs-goal-bar-${version}-linux-x86_64.tar.gz"
+          cmake --install build_linux --prefix stage/obs-goal-bar
+          test -f stage/obs-goal-bar/bin/64bit/obs-goal-bar.so
+          cat > stage/obs-goal-bar/INSTALL.txt <<EOF
+          OBS Goal Bar ${version} for Linux x86_64, built on Ubuntu 24.04 against OBS ${obs_version}.
+          Close OBS, then run:
+            mkdir -p ~/.config/obs-studio/plugins
+            tar -xzf ${package} -C ~/.config/obs-studio/plugins
+          Twitch login needs libsecret and a running Secret Service such as GNOME Keyring or KWallet.
+          Without one, the Twitch refresh token cannot be saved; it is never kept in plain text.
+          EOF
+          tar -C stage -czf "${package}" obs-goal-bar
+          echo "PACKAGE=${package}" >> "${GITHUB_ENV}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: obs-goal-bar-linux-x86_64
+          path: ${{ env.PACKAGE }}
+          if-no-files-found: error
