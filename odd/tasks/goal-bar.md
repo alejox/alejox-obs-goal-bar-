@@ -30,8 +30,8 @@ Native OBS plugin "Goal Bar": an on-scene progress bar toward a live goal (YouTu
 
 ## Tasks
 - [x] T1 Scaffold: CMake + presets + buildspec, plugin entry, core library + CTest target, macOS build. Route: delegated (2+ non-trivial files, reads multi-stream to prepare the write). Evidence: `ctest --test-dir build_tests` 1/1 passed (parent re-ran); `cmake --preset macos` + `cmake --build --preset macos` BUILD SUCCEEDED; bundle build_macos/RelWithDebInfo/obs-goal-bar.plugin present. PENDING: load check inside OBS (not installed yet; done at T3 when there is something visible). RDD: off (no review). ~170 authored lines (template copies excluded). Commit: 1a44786.
-- [x] T2 Core domain: `Goal` (start, current, target, progress, reached event fired once and persisted, next goal step), `MetricProvider` port, manual provider, subscriber rounding helpers, settings codec. Test-first. Route: delegated (6 new core units + tests). Evidence: RED per unit via wrong-value stubs, then GREEN; parent fix: `align_target_to_step` now uses the step of max(target, count) (RED observed: got 10050 expected 10100, then GREEN). `ctest --test-dir build_tests` 6/6 passed; `cmake --build --preset macos` BUILD SUCCEEDED. RDD: off. ~680 authored lines (~330 src, ~350 tests; above heuristic because of test coverage).
-- [ ] T3 Native source "Goal Bar": QPainter → gs_texture, redraw only on change; properties (provider, metric, goal, style preset + color). Usable in manual mode.
+- [x] T2 Core domain: `Goal` (start, current, target, progress, reached event fired once and persisted, next goal step), `MetricProvider` port, manual provider, subscriber rounding helpers, settings codec. Test-first. Route: delegated (6 new core units + tests). Evidence: RED per unit via wrong-value stubs, then GREEN; parent fix: `align_target_to_step` now uses the step of max(target, count) (RED observed: got 10050 expected 10100, then GREEN). `ctest --test-dir build_tests` 6/6 passed; `cmake --build --preset macos` BUILD SUCCEEDED. RDD: off. ~680 authored lines (~330 src, ~350 tests; above heuristic because of test coverage). Commit: 918a858.
+- [x] T3 Native source "Goal Bar": QPainter → gs_texture, redraw only on change; properties (title, metric, current, goal, style preset, accent/text color, size, reset). Usable in manual mode. Route: delegated (core + render + OBS adapter). Evidence: RED→GREEN for compact_number, goal_view, style_preset, Goal::set_target/reset; `ctest` 9/9 passed (parent re-ran); `cmake --build --preset macos` BUILD SUCCEEDED; offscreen render sheet of the 3 presets inspected by parent (scratchpad smoke/sheet.png). PENDING: in-OBS load + render check (installed, awaiting OBS restart by user). Known limits: Cancel in properties may revert reached flag; INT_MAX cap on value fields. RDD: off. ~920 authored lines (~250 tests).
 - [ ] T4 YouTube provider: OAuth PKCE, active broadcast detection, likes + subs polling with backoff, visible error states, rounding notice for subs. Bundle Qt TLS backend.
 - [ ] T5 Goal actions v1: show chosen scene source + restart media + hide on `media_ended` (audio/video), built-in visual celebration, auto next goal, "Test" button.
 - [ ] T6 Twitch provider: followers + subs (reuse multi-stream Twitch OAuth).
@@ -45,7 +45,7 @@ Native OBS plugin "Goal Bar": an on-scene progress bar toward a live goal (YouTu
 
 ## Delivery
 - Strategy: ask-on-risk (default). Forecast well above 400 authored lines → chain strategy: stacked-to-main (user choice, 2026-11-09). Slice boundaries recorded here as PRs are planned; no remote exists yet.
-- Running authored lines: ~850 (T1 ~170, T2 ~680).
+- Running authored lines: ~1770 (T1 ~170, T2 ~680, T3 ~920).
 - Slice plan (stacked-to-main): PR1 = T1+T2 (core foundation); PR2 = T3; next slices decided as they land.
 
 ## Progress / evidence
@@ -53,4 +53,4 @@ Native OBS plugin "Goal Bar": an on-scene progress bar toward a live goal (YouTu
 - Engram mirror: PENDING (mem_save blocked by auto-mode hook check); resync when available.
 
 ## Next step
-T3 native "Goal Bar" source (manual mode), then install and verify it loads in OBS.
+Confirm in-OBS load/render of T3, then T4 YouTube provider (resolve open OAuth/quota uncertainties first).

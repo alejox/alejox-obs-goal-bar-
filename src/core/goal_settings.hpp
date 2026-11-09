@@ -15,6 +15,17 @@ using SettingsMap = std::map<std::string, std::string>;
 inline constexpr uint64_t kDefaultGoalTarget = 100;
 inline constexpr uint64_t kDefaultGoalStep = 100;
 
+// Keys of the encoded map. Adapters persist them under the same names.
+namespace settings_key {
+inline constexpr const char *kStart = "goal_start";
+inline constexpr const char *kTarget = "goal_target";
+inline constexpr const char *kCurrent = "goal_current";
+inline constexpr const char *kReachedFired = "goal_reached_fired";
+inline constexpr const char *kMetric = "metric";
+inline constexpr const char *kPlatform = "platform";
+inline constexpr const char *kStep = "goal_step";
+} // namespace settings_key
+
 // Everything persisted for one Goal Bar source.
 struct GoalSettings {
 	Goal goal{0, kDefaultGoalTarget, 0, false};

@@ -7,13 +7,13 @@
 namespace goalbar {
 namespace {
 
-constexpr const char *kStartKey = "goal_start";
-constexpr const char *kTargetKey = "goal_target";
-constexpr const char *kCurrentKey = "goal_current";
-constexpr const char *kReachedFiredKey = "goal_reached_fired";
-constexpr const char *kMetricKey = "metric";
-constexpr const char *kPlatformKey = "platform";
-constexpr const char *kStepKey = "goal_step";
+constexpr const char *kStartKey = settings_key::kStart;
+constexpr const char *kTargetKey = settings_key::kTarget;
+constexpr const char *kCurrentKey = settings_key::kCurrent;
+constexpr const char *kReachedFiredKey = settings_key::kReachedFired;
+constexpr const char *kMetricKey = settings_key::kMetric;
+constexpr const char *kPlatformKey = settings_key::kPlatform;
+constexpr const char *kStepKey = settings_key::kStep;
 
 std::optional<std::string_view> find(const SettingsMap &values, const char *key)
 {

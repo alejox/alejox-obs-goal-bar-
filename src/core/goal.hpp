@@ -23,6 +23,13 @@ struct Goal {
 	// reaches the target; later drops below the target never re-arm the goal.
 	GoalEvent apply(uint64_t new_value);
 
+	// Changes the target. Raising it above the current value re-arms the
+	// reached event; otherwise the fired flag is kept.
+	void set_target(uint64_t new_target);
+
+	// Starts the goal over from the current value and re-arms the event.
+	void reset();
+
 	// The next goal: starts at this target and moves up by `step` until the
 	// target is above the current value. Returns nullopt when step is 0.
 	std::optional<Goal> advance(uint64_t step) const;

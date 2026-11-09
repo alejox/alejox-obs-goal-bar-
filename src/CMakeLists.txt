@@ -7,10 +7,13 @@ string(JSON goal_bar_version GET "${goal_bar_buildspec}" version)
 
 add_library(
   goal-bar-core STATIC
+  core/compact_number.cpp
   core/goal.cpp
   core/goal_settings.cpp
+  core/goal_view.cpp
   core/manual_provider.cpp
   core/metric.cpp
+  core/style_preset.cpp
   core/subscriber_rounding.cpp
   core/version.cpp)
 target_include_directories(goal-bar-core PUBLIC "${CMAKE_CURRENT_LIST_DIR}")

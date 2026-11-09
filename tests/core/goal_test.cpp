@@ -81,3 +81,29 @@ TEST_CASE(advance_rejects_zero_step)
 {
 	CHECK(!(Goal{0, 100, 100, true}.advance(0).has_value()));
 }
+
+TEST_CASE(set_target_above_current_rearms_the_goal)
+{
+	Goal goal{0, 10, 12, true};
+	goal.set_target(20);
+	CHECK_EQ(goal.target, uint64_t{20});
+	CHECK(!goal.reached_fired);
+	CHECK(goal.apply(20) == GoalEvent::GoalReached);
+}
+
+TEST_CASE(set_target_at_or_below_current_keeps_the_fired_flag)
+{
+	Goal goal{0, 10, 12, true};
+	goal.set_target(12);
+	CHECK(goal.reached_fired);
+	CHECK(goal.apply(12) == GoalEvent::None);
+}
+
+TEST_CASE(reset_restarts_progress_from_the_current_value)
+{
+	Goal goal{0, 10, 12, true};
+	goal.reset();
+	CHECK_EQ(goal.start, uint64_t{12});
+	CHECK_EQ(goal.current, uint64_t{12});
+	CHECK(!goal.reached_fired);
+}

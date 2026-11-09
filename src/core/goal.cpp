@@ -24,6 +24,19 @@ GoalEvent Goal::apply(uint64_t new_value)
 	return GoalEvent::GoalReached;
 }
 
+void Goal::set_target(uint64_t new_target)
+{
+	target = new_target;
+	if (current < target)
+		reached_fired = false;
+}
+
+void Goal::reset()
+{
+	start = current;
+	reached_fired = false;
+}
+
 std::optional<Goal> Goal::advance(uint64_t step) const
 {
 	if (step == 0)
