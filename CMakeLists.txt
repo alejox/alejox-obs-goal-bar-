@@ -25,7 +25,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE goal-bar-core goal-bar-providers OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Gui Qt6::Widgets
+  PRIVATE goal-bar-core goal-bar-providers goal-bar-update OBS::libobs OBS::obs-frontend-api Qt6::Core Qt6::Gui Qt6::Widgets
 )
 target_compile_options(
   ${CMAKE_PROJECT_NAME}
@@ -46,6 +46,8 @@ target_sources(
     src/render/goal_bar_painter.cpp
     src/secrets/platform_secret_store.cpp
     src/ui/twitch_connect_dialog.cpp
+    src/ui/update_controller.cpp
+    src/update/update_service.cpp
 )
 
 # System HTTPS stack: OBS does not ship Qt's TLS plugins on Windows or macOS, so

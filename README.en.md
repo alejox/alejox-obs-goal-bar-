@@ -90,6 +90,17 @@ tar -xzf obs-goal-bar-<version>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plug
 
 ---
 
+## 🔄 Updates
+
+- **Automatic.** When OBS starts, the plugin checks the latest release on GitHub, at most once a day. If there is a newer one, it shows a notice with the release notes and three choices: **Install on next restart**, **Later** or **Skip this version**.
+- **Manual.** Use **Tools > Goal Bar: Check for updates**.
+- **How it applies.** After **Install on next restart**, the package is downloaded and verified (against the SHA-256 GitHub publishes). It is installed when you close OBS and is active the next time you open it. If any step fails, the previous version is put back.
+
+> [!NOTE]
+> Only an install made as in the instructions above (not inside the OBS program folder or from a distribution package) updates itself, and your user must be able to write to it. Otherwise the notice links to the release page for a manual download.
+
+---
+
 ## 🛠️ Build from source
 
 Requirements: macOS 13 or later on Apple Silicon, Xcode and CMake 3.28 or later.
@@ -117,7 +128,7 @@ ctest --test-dir build_tests --output-on-failure
 |------|----------------|
 | Twitch login | The refresh token lives in the macOS Keychain; the access token only in memory |
 | YouTube | The public live page is read; no sign-in, no keys |
-| Everything else | The plugin only talks to youtube.com and twitch.tv. It sends no data anywhere else |
+| Everything else | The plugin only talks to youtube.com, twitch.tv and github.com (to check for updates). It sends no data anywhere else |
 
 ---
 

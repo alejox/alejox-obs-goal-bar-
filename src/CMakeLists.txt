@@ -32,6 +32,7 @@ add_library(
   core/metric.cpp
   core/poll_schedule.cpp
   core/progress_tween.cpp
+  core/sha256.cpp
   core/style_preset.cpp
   core/subscriber_rounding.cpp
   core/twitch_auth.cpp
@@ -51,3 +52,17 @@ add_library(goal-bar-providers STATIC providers/twitch_account.cpp providers/twi
                                       providers/youtube_public_provider.cpp)
 target_link_libraries(goal-bar-providers PUBLIC goal-bar-core Threads::Threads)
 set_target_properties(goal-bar-providers PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Updater logic: release check, staging manifest, installer script and settings. Plain
+# C++ and the standard library; the Qt service in the plugin does the network and UI.
+add_library(
+  goal-bar-update STATIC
+  update/atomic_file.cpp
+  update/install_plan.cpp
+  update/staging.cpp
+  update/update_check.cpp
+  update/update_settings.cpp
+  update/update_settings_file.cpp)
+target_link_libraries(goal-bar-update PUBLIC goal-bar-core)
+target_include_directories(goal-bar-update SYSTEM PRIVATE "${nlohmann_json_header_SOURCE_DIR}")
+set_target_properties(goal-bar-update PROPERTIES POSITION_INDEPENDENT_CODE ON)

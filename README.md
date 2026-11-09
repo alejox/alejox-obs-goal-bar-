@@ -90,6 +90,17 @@ tar -xzf obs-goal-bar-<versión>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plu
 
 ---
 
+## 🔄 Actualizaciones
+
+- **Automáticas.** Al abrir OBS, el plugin consulta la última versión publicada en GitHub, como mucho una vez al día. Si hay una nueva, te muestra un aviso con las notas de la versión y tres opciones: **Instalar al reiniciar**, **Más tarde** u **Omitir esta versión**.
+- **Manual.** En **Herramientas > Goal Bar: Buscar actualizaciones**.
+- **Cómo se aplica.** Al elegir **Instalar al reiniciar**, el paquete se descarga y se verifica (SHA-256 publicado por GitHub). Se instala cuando cierras OBS y queda activo al volver a abrirlo. Si algo falla, se restaura la versión anterior.
+
+> [!NOTE]
+> Solo se actualiza sola una instalación hecha como en las instrucciones de arriba (no dentro de la carpeta del programa OBS ni desde un paquete de la distribución), y tu usuario debe poder escribir en ella. Si no, el aviso enlaza a la página de la versión para descargarla a mano.
+
+---
+
 ## 🛠️ Compilar desde el código
 
 Requisitos: macOS 13 o posterior en Apple Silicon, Xcode y CMake 3.28 o posterior.
@@ -117,7 +128,7 @@ ctest --test-dir build_tests --output-on-failure
 |------|-------------|
 | Sesión de Twitch | El token de renovación vive en el Llavero de macOS; el token de acceso, solo en memoria |
 | YouTube | Se lee la página pública del directo; no hay inicio de sesión ni claves |
-| Todo lo demás | El plugin solo habla con youtube.com y twitch.tv. No envía datos a ningún otro sitio |
+| Todo lo demás | El plugin solo habla con youtube.com, twitch.tv y github.com (para buscar actualizaciones). No envía datos a ningún otro sitio |
 
 ---
 
