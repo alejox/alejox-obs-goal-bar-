@@ -3,12 +3,14 @@
 #include "core/goal_settings.hpp"
 #include "obs/obs_shutdown.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 
 #include <algorithm>
 #include <climits>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -20,6 +22,11 @@ constexpr const char *kCelebrateKey = "celebrate";
 constexpr const char *kShowSourceKey = "show_source";
 constexpr const char *kShowSecondsKey = "show_seconds";
 constexpr const char *kAutoNextKey = "auto_next";
+constexpr const char *kSwitchSceneKey = "switch_scene";
+constexpr const char *kReturnSecondsKey = "return_seconds";
+constexpr const char *kSaveReplayKey = "save_replay";
+constexpr const char *kReplayDelayKey = "replay_delay";
+constexpr const char *kScreenshotKey = "take_screenshot";
 constexpr const char *kTestKey = "test_celebration";
 constexpr const char *kMediaEndedSignal = "media_ended";
 
@@ -109,6 +116,104 @@ void queue_visibility(obs_weak_source_t *target, bool visible, bool restart_medi
 	obs_queue_task(OBS_TASK_UI, run_visibility_task, new VisibilityTask{target, visible, restart_media}, false);
 }
 
+} // namespace
+
+// --- Frontend actions, always on the UI thread --------------------------------
+
+// Owned by GoalActions and by every queued task, so a task may outlive it.
+// Only touched on the UI thread.
+struct FrontendState {
+	obs_weak_source_t *previous = nullptr; // the scene to return to
+	obs_weak_source_t *switched = nullptr; // the scene we switched to
+	bool replay_warned = false;
+
+	void forget()
+	{
+		obs_weak_source_release(previous);
+		obs_weak_source_release(switched);
+		previous = switched = nullptr;
+	}
+	~FrontendState() { forget(); }
+};
+
+namespace {
+
+// Remembers the scene to return to, unless the program already shows the
+// target (a restarted run): then the earlier one is kept.
+void switch_scene(FrontendState &state, const std::string &scene)
+{
+	obs_source_t *target = obs_get_source_by_name(scene.c_str());
+	if (!target || !obs_source_is_scene(target)) {
+		obs_log(LOG_WARNING, "goal action: scene '%s' not found", scene.c_str());
+		obs_source_release(target);
+		return;
+	}
+	obs_source_t *current = obs_frontend_get_current_scene();
+	if (current != target) {
+		obs_weak_source_release(state.previous);
+		state.previous = current ? obs_source_get_weak_source(current) : nullptr;
+	}
+	obs_weak_source_release(state.switched);
+	state.switched = obs_source_get_weak_source(target);
+	// In Studio Mode OBS applies this to the Preview, like any scene click.
+	obs_frontend_set_current_scene(target);
+	obs_source_release(current);
+	obs_source_release(target);
+}
+
+// Returns only if the program still shows the scene we switched to: a scene
+// the user picked meanwhile wins.
+void return_scene(FrontendState &state)
+{
+	obs_source_t *current = obs_frontend_get_current_scene();
+	obs_source_t *previous = obs_weak_source_get_source(state.previous);
+	if (current && previous && obs_weak_source_references_source(state.switched, current))
+		obs_frontend_set_current_scene(previous);
+	obs_source_release(previous);
+	obs_source_release(current);
+	state.forget();
+}
+
+void save_replay(FrontendState &state)
+{
+	if (obs_frontend_replay_buffer_active()) {
+		obs_frontend_replay_buffer_save();
+		state.replay_warned = false;
+	} else if (!state.replay_warned) {
+		obs_log(LOG_WARNING, "goal action: replay buffer not active, no clip saved");
+		state.replay_warned = true;
+	}
+}
+
+struct FrontendTask {
+	std::shared_ptr<FrontendState> state;
+	ActionCommand command;
+	std::string scene; // for SwitchScene
+};
+
+void run_frontend_task(void *param)
+{
+	std::unique_ptr<FrontendTask> task(static_cast<FrontendTask *>(param));
+	if (obs_shutting_down())
+		return;
+	switch (task->command) {
+	case ActionCommand::SwitchScene:
+		switch_scene(*task->state, task->scene);
+		break;
+	case ActionCommand::ReturnScene:
+		return_scene(*task->state);
+		break;
+	case ActionCommand::SaveReplay:
+		save_replay(*task->state);
+		break;
+	case ActionCommand::TakeScreenshot:
+		obs_frontend_take_screenshot();
+		break;
+	default:
+		break;
+	}
+}
+
 // --- Properties ---------------------------------------------------------------
 
 struct SourceList {
@@ -139,6 +244,48 @@ bool auto_next_changed(obs_properties_t *props, obs_property_t *, obs_data_t *se
 	return true;
 }
 
+bool switch_scene_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	const bool has_scene = *obs_data_get_string(settings, kSwitchSceneKey) != '\0';
+	obs_property_set_visible(obs_properties_get(props, kReturnSecondsKey), has_scene);
+	return true;
+}
+
+bool save_replay_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	obs_property_set_visible(obs_properties_get(props, kReplayDelayKey), obs_data_get_bool(settings, kSaveReplayKey));
+	return true;
+}
+
+void add_scene_list(obs_properties_t *group)
+{
+	obs_property_t *list = obs_properties_add_list(group, kSwitchSceneKey, obs_module_text("GoalBar.Actions.SwitchScene"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_set_long_description(list, obs_module_text("GoalBar.Actions.SwitchSceneHint"));
+	obs_property_list_add_string(list, obs_module_text("GoalBar.Actions.None"), "");
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+	for (size_t i = 0; i < scenes.sources.num; ++i) {
+		const char *name = obs_source_get_name(scenes.sources.array[i]);
+		if (name && *name)
+			obs_property_list_add_string(list, name, name);
+	}
+	obs_frontend_source_list_free(&scenes);
+	obs_property_set_modified_callback(list, switch_scene_changed);
+}
+
+void add_v2_properties(obs_properties_t *group)
+{
+	add_scene_list(group);
+	obs_properties_add_int(group, kReturnSecondsKey, obs_module_text("GoalBar.Actions.ReturnSeconds"), 0, 600, 1);
+	obs_property_t *replay = obs_properties_add_bool(group, kSaveReplayKey, obs_module_text("GoalBar.Actions.SaveReplay"));
+	obs_property_set_long_description(replay, obs_module_text("GoalBar.Actions.SaveReplayHint"));
+	obs_property_set_modified_callback(replay, save_replay_changed);
+	obs_properties_add_int(group, kReplayDelayKey, obs_module_text("GoalBar.Actions.ReplayDelay"), 0, 30, 1);
+	obs_property_t *shot = obs_properties_add_bool(group, kScreenshotKey, obs_module_text("GoalBar.Actions.Screenshot"));
+	obs_property_set_long_description(shot, obs_module_text("GoalBar.Actions.ScreenshotHint"));
+}
+
 void add_source_list(obs_properties_t *group, obs_source_t *owner)
 {
 	obs_property_t *list = obs_properties_add_list(group, kShowSourceKey, obs_module_text("GoalBar.Actions.ShowSource"),
@@ -162,6 +309,11 @@ ActionSettings read_action_settings(obs_data_t *settings)
 	out.show_source = obs_data_get_string(settings, kShowSourceKey);
 	out.show_seconds = static_cast<int>(std::clamp<long long>(obs_data_get_int(settings, kShowSecondsKey), 1, 120));
 	out.auto_next = obs_data_get_bool(settings, kAutoNextKey);
+	out.switch_scene = obs_data_get_string(settings, kSwitchSceneKey);
+	out.return_seconds = static_cast<int>(std::clamp<long long>(obs_data_get_int(settings, kReturnSecondsKey), 0, 600));
+	out.save_replay = obs_data_get_bool(settings, kSaveReplayKey);
+	out.replay_delay = static_cast<int>(std::clamp<long long>(obs_data_get_int(settings, kReplayDelayKey), 0, 30));
+	out.take_screenshot = obs_data_get_bool(settings, kScreenshotKey);
 	return out;
 }
 
@@ -172,6 +324,11 @@ void set_action_defaults(obs_data_t *settings)
 	obs_data_set_default_string(settings, kShowSourceKey, defaults.show_source.c_str());
 	obs_data_set_default_int(settings, kShowSecondsKey, defaults.show_seconds);
 	obs_data_set_default_bool(settings, kAutoNextKey, defaults.auto_next);
+	obs_data_set_default_string(settings, kSwitchSceneKey, defaults.switch_scene.c_str());
+	obs_data_set_default_int(settings, kReturnSecondsKey, defaults.return_seconds);
+	obs_data_set_default_bool(settings, kSaveReplayKey, defaults.save_replay);
+	obs_data_set_default_int(settings, kReplayDelayKey, defaults.replay_delay);
+	obs_data_set_default_bool(settings, kScreenshotKey, defaults.take_screenshot);
 }
 
 void add_action_properties(obs_properties_t *props, obs_source_t *owner, obs_property_clicked_t test_clicked,
@@ -184,11 +341,14 @@ void add_action_properties(obs_properties_t *props, obs_source_t *owner, obs_pro
 	obs_property_t *auto_next = obs_properties_add_bool(group, kAutoNextKey, obs_module_text("GoalBar.Actions.AutoNext"));
 	obs_property_set_modified_callback(auto_next, auto_next_changed);
 	obs_properties_add_int(group, settings_key::kStep, obs_module_text("GoalBar.Actions.Step"), 1, INT_MAX, 1);
-	obs_properties_add_button2(group, kTestKey, obs_module_text("GoalBar.Actions.Test"), test_clicked, data);
+	add_v2_properties(group);
+	obs_property_t *test =
+		obs_properties_add_button2(group, kTestKey, obs_module_text("GoalBar.Actions.Test"), test_clicked, data);
+	obs_property_set_long_description(test, obs_module_text("GoalBar.Actions.TestHint"));
 	obs_properties_add_group(props, kGroupKey, obs_module_text("GoalBar.Actions"), OBS_GROUP_NORMAL, group);
 }
 
-GoalActions::GoalActions(obs_source_t *owner) : owner_(owner) {}
+GoalActions::GoalActions(obs_source_t *owner) : owner_(owner), frontend_(std::make_shared<FrontendState>()) {}
 
 GoalActions::~GoalActions()
 {
@@ -231,6 +391,11 @@ void GoalActions::trigger(bool test)
 	plan.show_source = target != nullptr;
 	plan.source_is_media = target && is_media_source(target);
 	plan.source_loops = plan.source_is_media && media_loops(target);
+	plan.switch_scene = !settings_.switch_scene.empty();
+	plan.return_seconds = settings_.return_seconds;
+	plan.save_replay = settings_.save_replay;
+	plan.replay_delay = settings_.replay_delay;
+	plan.take_screenshot = settings_.take_screenshot;
 
 	++seed_;
 	media_ended_ = false;
@@ -243,7 +408,7 @@ void GoalActions::trigger(bool test)
 GoalActions::Tick GoalActions::tick(float seconds)
 {
 	std::lock_guard lock(mutex_);
-	if (sequence_.phase() == ActionPhase::Idle && !was_celebrating_)
+	if (sequence_.phase() == ActionPhase::Idle && !was_celebrating_ && !sequence_.has_pending())
 		return {};
 
 	std::vector<ActionCommand> commands;
@@ -283,7 +448,23 @@ void GoalActions::execute(ActionCommand command, obs_source_t *target)
 		break;
 	case ActionCommand::Advance:
 		break; // done by the caller of tick()
+	case ActionCommand::SwitchScene:
+	case ActionCommand::ReturnScene:
+	case ActionCommand::SaveReplay:
+	case ActionCommand::TakeScreenshot:
+		queue_frontend(command);
+		break;
 	}
+}
+
+// Caller holds mutex_. The scene name is copied into the task; the shared
+// state is only touched by UI tasks, which run one after another.
+void GoalActions::queue_frontend(ActionCommand command)
+{
+	if (obs_shutting_down())
+		return;
+	auto *task = new FrontendTask{frontend_, command, settings_.switch_scene};
+	obs_queue_task(OBS_TASK_UI, run_frontend_task, task, false);
 }
 
 void GoalActions::show(obs_source_t *target)

@@ -1,6 +1,8 @@
 // OBS adapter: executes the goal-reached actions decided by the core
 // ActionSequence (built-in celebration, show a scene source, restart media and
-// hide it again). Thread-safe: trigger() and tick() may run on any thread.
+// hide it again, switch scene and back, save the replay buffer, screenshot).
+// Thread-safe: trigger() and tick() may run on any thread; every frontend side
+// effect runs later on the UI thread.
 #pragma once
 
 #include "core/action_sequence.hpp"
@@ -10,6 +12,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -21,7 +24,14 @@ struct ActionSettings {
 	std::string show_source; // source name, empty for none
 	int show_seconds = 8;
 	bool auto_next = true;
+	std::string switch_scene; // scene name, empty for none
+	int return_seconds = 0;   // 0 stays on the switched scene
+	bool save_replay = false;
+	int replay_delay = 5;
+	bool take_screenshot = false;
 };
+
+struct FrontendState; // shared with queued UI tasks
 
 ActionSettings read_action_settings(obs_data_t *settings);
 void set_action_defaults(obs_data_t *settings);
@@ -44,7 +54,7 @@ public:
 	void configure(const ActionSettings &settings);
 
 	// Runs the actions for a reached goal, or for the Test button (`test`),
-	// which never advances the goal.
+	// which never advances the goal nor saves a replay.
 	void trigger(bool test);
 
 	struct Tick {
@@ -60,6 +70,7 @@ private:
 	void execute(ActionCommand command, obs_source_t *target);
 	void show(obs_source_t *target);
 	void hide();
+	void queue_frontend(ActionCommand command);
 	void disconnect_media_signal();
 	static void on_media_ended(void *data, calldata_t *params);
 
@@ -73,6 +84,7 @@ private:
 	bool was_celebrating_ = false;
 	obs_weak_source_t *shown_ = nullptr; // the source made visible, if any
 	bool media_connected_ = false;
+	std::shared_ptr<FrontendState> frontend_;
 };
 
 } // namespace goalbar::obs

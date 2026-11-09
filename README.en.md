@@ -20,6 +20,7 @@
 | ✍️ | **Manual mode** | Type the current value yourself; always available |
 | 🎉 | **Celebration** | When the goal is reached: a glow and confetti over the bar |
 | 🎬 | **Show a source** | Shows a scene source (image, text, audio or video). Audio and video play from the start and hide when they end |
+| 🔀 | **More actions (optional)** | Switch scene (and back after N s), save a Replay Buffer clip, take a screenshot. All off by default; tests never save clips |
 | ⏭️ | **Auto next goal** | After the celebration, the goal moves up by the step you choose |
 | ⌨️ | **Hotkeys** | "Goal Bar: Test celebration" and "Goal Bar: Reset goal", per source |
 | 🌍 | **Translations** | English and Spanish UI |

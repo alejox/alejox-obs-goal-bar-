@@ -20,6 +20,7 @@
 | ✍️ | **Modo manual** | Escribes el valor actual a mano; siempre disponible |
 | 🎉 | **Celebración** | Al cumplir la meta: brillo y confeti sobre la barra |
 | 🎬 | **Mostrar una fuente** | Muestra una fuente de la escena (imagen, texto, audio o video). Audio y video se reproducen desde el inicio y se ocultan al terminar |
+| 🔀 | **Más acciones (opcionales)** | Cambiar de escena (y volver tras N s), guardar un clip del búfer de repetición, tomar una captura. Todas desactivadas por defecto; la prueba nunca guarda clips |
 | ⏭️ | **Siguiente meta automática** | Tras la celebración, la meta sube según el incremento que elijas |
 | ⌨️ | **Atajos de teclado** | «Barra de meta: Probar celebración» y «Barra de meta: Reiniciar meta», por fuente |
 | 🌍 | **Traducciones** | Interfaz en inglés y español |

@@ -11,7 +11,18 @@ namespace goalbar {
 enum class ActionPhase { Idle, Celebrating, Advancing };
 
 // Side effects the adapter must execute, in order.
-enum class ActionCommand { ShowSource, HideSource, Advance };
+enum class ActionCommand {
+	ShowSource,
+	HideSource,
+	Advance,
+	SwitchScene,    // switch the program to the chosen scene
+	ReturnScene,    // switch back to the scene that was current before
+	SaveReplay,     // save the replay buffer
+	TakeScreenshot, // screenshot of the program output
+};
+
+// The screenshot waits a moment so the celebration is on screen.
+inline constexpr double kScreenshotDelaySeconds = 1.0;
 
 // A media source is hidden when it ends, but never stays up longer than this.
 // A looping one never ends: it is hidden after show_seconds (or when it ends).
@@ -24,13 +35,23 @@ struct ActionPlan {
 	double show_seconds = 8.0;
 	bool auto_next = true; // advance to the next goal when everything ends
 	bool source_loops = false; // a looping media never ends: hide after show_seconds
+
+	// v2 actions. Their timers run on their own: they neither delay nor are
+	// cut short by the celebration or the advance.
+	bool switch_scene = false;
+	double return_seconds = 0.0; // switch back after this long; 0 stays
+	bool save_replay = false;    // never on test runs
+	double replay_delay = 5.0;
+	bool take_screenshot = false; // after kScreenshotDelaySeconds
 };
 
 class ActionSequence {
 public:
 	// Starts the actions for a reached goal, or for a test run (which never
-	// advances). Starting again while running restarts the timers and keeps a
-	// pending advance.
+	// advances nor saves a replay). Starting again while running restarts the
+	// timers and keeps a pending advance. A pending timed command survives a
+	// restart unless the new plan schedules the same kind again; switching the
+	// scene again always drops a pending return (it is rescheduled if asked).
 	std::vector<ActionCommand> start(const ActionPlan &plan, bool test);
 
 	// Advances the timers by `seconds`.
@@ -47,10 +68,21 @@ public:
 	bool celebrating() const;
 	// Seconds since start().
 	double elapsed() const { return elapsed_; }
+	// True while a timed v2 command (return, replay, screenshot) is waiting.
+	bool has_pending() const { return !timed_.empty(); }
 
 private:
 	std::vector<ActionCommand> finish_if_done();
 	bool source_time_over() const;
+	void drop(ActionCommand command);
+	void schedule(ActionCommand command, double delay, std::vector<ActionCommand> &now);
+	std::vector<ActionCommand> run_due_timers(double seconds);
+
+	struct Timed {
+		ActionCommand command;
+		double remaining;
+	};
+	std::vector<Timed> timed_; // waiting v2 commands
 
 	ActionPlan plan_;
 	ActionPhase phase_ = ActionPhase::Idle;
