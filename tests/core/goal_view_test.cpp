@@ -27,7 +27,7 @@ TEST_CASE(view_carries_title_and_compact_value_label)
 TEST_CASE(view_progress_follows_goal)
 {
 	const GoalView view = build_goal_view(settings_with(Goal{100, 200, 150, false}), "");
-	CHECK_NEAR(view.progress, 0.5, 1e-9);
+	CHECK_NEAR(view.progress, 0.75, 1e-9); // 150 / 200, like the label
 	CHECK(!view.reached);
 }
 

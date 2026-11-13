@@ -84,7 +84,7 @@ Twitch login on Linux needs `libsecret` and a running Secret Service (GNOME Keyr
 5. **Assign hotkeys (optional).** In **Settings → Hotkeys**, find the source and bind "Test celebration" and "Reset goal".
 
 > [!TIP]
-> **Reset goal** starts the bar over from the current value. It never fires the celebration, even when the value is already at the goal.
+> The bar always shows current / goal, like its label. **Reset goal** re-arms the celebration for the current goal (and, with "Auto next goal", moves an already reached goal up by the step). It never fires the celebration itself, even when the value is already at the goal.
 
 ### 🟣 Twitch
 

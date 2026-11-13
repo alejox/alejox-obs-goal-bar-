@@ -6,13 +6,9 @@ namespace goalbar {
 
 double Goal::progress() const
 {
-	if (target <= start)
-		return current >= target ? 1.0 : 0.0;
-	if (current <= start)
-		return 0.0;
 	if (current >= target)
 		return 1.0;
-	return static_cast<double>(current - start) / static_cast<double>(target - start);
+	return static_cast<double>(current) / static_cast<double>(target);
 }
 
 GoalEvent Goal::apply(uint64_t new_value)

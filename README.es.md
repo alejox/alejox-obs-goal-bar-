@@ -84,7 +84,7 @@ En Linux, el inicio de sesión de Twitch necesita `libsecret` y un Secret Servic
 5. **Asigna atajos (opcional).** En **Ajustes → Atajos**, busca la fuente y asigna «Probar celebración» y «Reiniciar meta».
 
 > [!TIP]
-> **Reiniciar meta** empieza la barra de nuevo desde el valor actual. Nunca dispara la celebración, aunque el valor ya esté en la meta.
+> La barra siempre muestra actual / meta, igual que su texto. **Reiniciar meta** vuelve a armar la celebración de la meta actual (y, con «Siguiente meta automática», sube por el incremento una meta ya cumplida). Nunca dispara la celebración por sí sola, aunque el valor ya esté en la meta.
 
 ### 🟣 Twitch
 

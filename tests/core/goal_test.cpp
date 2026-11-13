@@ -4,25 +4,18 @@
 
 using namespace goalbar;
 
-TEST_CASE(progress_is_measured_from_start)
+// The bar matches the "current / target" label, whatever the goal started at.
+TEST_CASE(progress_is_current_over_target)
 {
-	CHECK_NEAR((Goal{100, 200, 100, false}.progress()), 0.0, 1e-9);
-	CHECK_NEAR((Goal{100, 200, 150, false}.progress()), 0.5, 1e-9);
+	CHECK_NEAR((Goal{0, 200, 50, false}.progress()), 0.25, 1e-9);
+	CHECK_NEAR((Goal{500, 1000, 514, false}.progress()), 0.514, 1e-9);
 	CHECK_NEAR((Goal{100, 200, 200, false}.progress()), 1.0, 1e-9);
 }
 
 TEST_CASE(progress_is_clamped)
 {
-	CHECK_NEAR((Goal{100, 200, 50, false}.progress()), 0.0, 1e-9);
+	CHECK_NEAR((Goal{0, 200, 0, false}.progress()), 0.0, 1e-9);
 	CHECK_NEAR((Goal{100, 200, 500, false}.progress()), 1.0, 1e-9);
-}
-
-TEST_CASE(progress_with_target_not_above_start_is_all_or_nothing)
-{
-	CHECK_NEAR((Goal{200, 200, 199, false}.progress()), 0.0, 1e-9);
-	CHECK_NEAR((Goal{200, 200, 200, false}.progress()), 1.0, 1e-9);
-	CHECK_NEAR((Goal{300, 200, 250, false}.progress()), 1.0, 1e-9);
-	CHECK_NEAR((Goal{300, 200, 150, false}.progress()), 0.0, 1e-9);
 }
 
 TEST_CASE(apply_fires_reached_exactly_once)
