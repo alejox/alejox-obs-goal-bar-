@@ -34,9 +34,9 @@
         }
     },
     "name": "obs-goal-bar",
-    "displayName": "OBS Goal Bar",
+    "displayName": "AC Goal Bar",
     "version": "0.1.2",
     "author": "alejox",
-    "website": "",
+    "website": "https://github.com/alejox/alejox-obs-goal-bar-",
     "email": ""
 }

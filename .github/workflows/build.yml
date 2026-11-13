@@ -85,7 +85,7 @@ jobs:
             throw "obs-goal-bar.dll is missing from the install tree"
           }
           @(
-            "OBS Goal Bar $version for Windows x64, built against OBS 33.0.1."
+            "AC Goal Bar $version for Windows x64, built against OBS 33.0.1."
             "Close OBS, then extract the obs-goal-bar folder into:"
             "  C:\ProgramData\obs-studio\plugins\"
             "The Twitch refresh token is kept in the Windows Credential Manager."
@@ -144,7 +144,7 @@ jobs:
           cmake --install build_linux --prefix stage/obs-goal-bar
           test -f stage/obs-goal-bar/bin/64bit/obs-goal-bar.so
           cat > stage/obs-goal-bar/INSTALL.txt <<EOF
-          OBS Goal Bar ${version} for Linux x86_64, built on Ubuntu 24.04 against OBS ${obs_version}.
+          AC Goal Bar ${version} for Linux x86_64, built on Ubuntu 24.04 against OBS ${obs_version}.
           Close OBS, then run:
             mkdir -p ~/.config/obs-studio/plugins
             tar -xzf ${package} -C ~/.config/obs-studio/plugins

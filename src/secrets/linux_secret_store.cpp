@@ -44,7 +44,7 @@ SecretError make_error(const char *operation, GError *error)
 
 std::optional<SecretError> LinuxSecretStore::put(const std::string &key, const std::string &secret)
 {
-	const std::string label = "OBS Goal Bar " + key;
+	const std::string label = "AC Goal Bar " + key;
 
 	GError *error = nullptr;
 	const gboolean stored = secret_password_store_sync(secret_schema(), SECRET_COLLECTION_DEFAULT,

@@ -1,150 +1,176 @@
 <div align="center">
 
-# 🎯 OBS Goal Bar
+# 🎯 AC Goal Bar
 
-**Una barra de progreso nativa para OBS que avanza en vivo hacia tu meta de me gusta, suscriptores o seguidores, y celebra cuando la alcanzas.**
+**A native OBS progress bar that moves live toward your likes, subscribers or followers goal on YouTube, Twitch or Kick, and celebrates when you reach it.**
 
-**Español** | [English](README.en.md)
+[![Latest release](https://img.shields.io/github/v/release/alejox/alejox-obs-goal-bar-?label=release&color=ff3d6e)](../../releases/latest)
+![macOS](https://img.shields.io/badge/macOS-13%2B%20Apple%20Silicon-000000?logo=apple&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-Ubuntu%2024.04%2B-E95420?logo=ubuntu&logoColor=white)
+![OBS](https://img.shields.io/badge/OBS-33%2B-302E31?logo=obsstudio&logoColor=white)
+[![License](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
+
+**English** · [Español](README.es.md)
+
+![AC Goal Bar: Minimal, Bold and Neon styles](docs/goal-bar.png)
+
+[**⬇️ Download**](../../releases/latest) &nbsp;·&nbsp; [Install](#-install) &nbsp;·&nbsp; [Features](#-features) &nbsp;·&nbsp; [FAQ](#-faq)
 
 </div>
 
 ---
 
-## ✨ Qué incluye
+A native OBS source (no browser source, no web page, no external app). YouTube and Kick need no account or keys; Twitch connects with a one-time code.
 
-| | Función | Qué hace |
-|:-:|---------|----------|
-| 📊 | **Fuente «Barra de meta»** | Una fuente de OBS con título, valor actual / meta y una barra que se llena con una animación suave. Tres estilos (Minimalista, Intenso, Neón), color de acento y tamaño |
-| ▶️ | **YouTube, modo público** | Lee los me gusta y los suscriptores del directo desde la página pública del canal (`@usuario`), sin iniciar sesión |
-| 🟣 | **Twitch** | Seguidores y suscriptores con la API oficial. Conectas tu cuenta con un código en twitch.tv/activate |
-| 🟢 | **Kick** | Seguidores y espectadores de cualquier canal, sin cuenta ni app de Kick (endpoint público no documentado, ver abajo) |
-| ✍️ | **Modo manual** | Escribes el valor actual a mano; siempre disponible |
-| 🎉 | **Celebración** | Al cumplir la meta: brillo y confeti sobre la barra |
-| 🎬 | **Mostrar una fuente** | Muestra una fuente de la escena (imagen, texto, audio o video). Audio y video se reproducen desde el inicio y se ocultan al terminar |
-| 🔀 | **Más acciones (opcionales)** | Cambiar de escena (y volver tras N s), guardar un clip del búfer de repetición, tomar una captura. Todas desactivadas por defecto; la prueba nunca guarda clips |
-| ⏭️ | **Siguiente meta automática** | Tras la celebración, la meta sube según el incremento que elijas |
-| ⌨️ | **Atajos de teclado** | «Barra de meta: Probar celebración» y «Barra de meta: Reiniciar meta», por fuente |
-| 🌍 | **Traducciones** | Interfaz en inglés y español |
+## ✨ Features
+
+| | Feature | What it does |
+|:-:|---------|--------------|
+| 📊 | **"Goal Bar" source** | An OBS source with a title, current value / goal and a bar that fills with a smooth animation. Three styles (Minimal, Bold, Neon), accent and text color, and size |
+| ▶️ | **YouTube, public mode** | Reads the live stream's likes and subscribers from the channel's public page (`@handle`), no sign-in |
+| 🟣 | **Twitch** | Followers and subscribers through the official API. Connect your account with a code on twitch.tv/activate |
+| 🟢 | **Kick** | Followers and viewers of any channel, no Kick account or app needed (undocumented public endpoint, see below) |
+| ✍️ | **Manual mode** | Type the current value yourself; always available |
+| 🎉 | **Celebration** | When the goal is reached: a glow and confetti over the bar |
+| 🎬 | **Show a source** | Shows a scene source (image, text, audio or video). Audio and video play from the start and hide when they end |
+| 🔀 | **More actions (optional)** | Switch scene (and back after N s), save a Replay Buffer clip, take a screenshot. All off by default; tests never save clips |
+| ⏭️ | **Auto next goal** | After the celebration, the goal moves up by the step you choose |
+| ⌨️ | **Hotkeys** | "Goal Bar: Test celebration" and "Goal Bar: Reset goal", per source |
+| 🔄 | **Updates** | Checks GitHub once a day and installs a new version on the next OBS restart, after you accept |
+| 🌍 | **Translations** | English and Spanish UI |
 
 > [!NOTE]
-> **YouTube redondea los suscriptores** (por ejemplo, 12,3 K), incluso para el dueño del canal. Por eso una meta de suscriptores se ajusta al siguiente valor que YouTube puede mostrar. Los me gusta son exactos y son la métrica por defecto.
+> **YouTube rounds subscriber counts** (for example, 12.3K), even for the channel owner. A subscribers goal is therefore aligned to the next value YouTube can show. Likes are exact and are the default metric.
 
----
+## 📦 Install
 
-## 🧰 Instalación (macOS)
+Download the package for your system from **[Releases](../../releases/latest)** and **quit OBS first** (OBS cannot replace a plugin it already loaded).
 
-> [!IMPORTANT]
-> **Cierra OBS antes de instalar.** OBS no puede reemplazar un plugin que ya cargó.
+| | macOS 13+ (Apple Silicon) | Windows x64 (OBS 33+) | Linux x86_64 |
+|---|---|---|---|
+| **File** | `obs-goal-bar-<version>-macos-arm64.zip` | `obs-goal-bar-<version>-windows-x64.zip` | `obs-goal-bar-<version>-linux-x86_64.tar.gz` |
+| **You get** | `obs-goal-bar.plugin` | the `obs-goal-bar` folder | the `obs-goal-bar` folder |
+| **Copy it to** | `~/Library/Application Support/obs-studio/plugins/` | `C:\ProgramData\obs-studio\plugins\` | `~/.config/obs-studio/plugins/` |
+| **Then** | Run the Terminal command below (once) | — | — |
 
-1. Consigue `obs-goal-bar.plugin` (o [compílalo](#️-compilar-desde-el-código)).
-2. Cópialo en:
+Each package also contains its steps as `INSTALL.txt`. Open OBS: **Help → Log Files → View Current Log** should show `[obs-goal-bar] loaded`.
 
-   ```text
-   ~/Library/Application Support/obs-studio/plugins/
-   ```
-
-   En Finder, pulsa <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>G</kbd> y pega la ruta. Crea la carpeta `plugins` si no existe.
-3. Abre OBS. En **Ayuda > Archivos de registro > Ver registro actual** deberías ver `[obs-goal-bar] loaded`.
-
-Si macOS se niega a cargar un paquete descargado, quita la marca de cuarentena:
+**macOS:** in Finder, press <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>G</kbd> and paste the path; create the `plugins` folder if it doesn't exist. The bundle isn't signed with a paid Apple developer account, so clear the quarantine flag once:
 
 ```bash
 xattr -dr com.apple.quarantine ~/Library/Application\ Support/obs-studio/plugins/obs-goal-bar.plugin
 ```
 
-**Desinstalar:** borra `~/Library/Application Support/obs-studio/plugins/obs-goal-bar.plugin`.
+**Windows:** the result must be `C:\ProgramData\obs-studio\plugins\obs-goal-bar\bin\64bit\obs-goal-bar.dll` (`ProgramData` is hidden: type the path in the Explorer address bar). The Twitch refresh token is kept in the Windows Credential Manager.
 
-## 🪟🐧 Instalación (Windows / Linux, desde GitHub Releases)
-
-Cierra OBS primero y descarga el paquete de tu sistema desde la página de GitHub Releases. Cada paquete trae también sus pasos en `INSTALL.txt`.
-
-| Sistema | Paquete | Extraer en | Resultado |
-|---------|---------|------------|-----------|
-| Windows x64 | `obs-goal-bar-<versión>-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` | `...\plugins\obs-goal-bar\bin\64bit\obs-goal-bar.dll` |
-| Linux x86_64 | `obs-goal-bar-<versión>-linux-x86_64.tar.gz` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-goal-bar/bin/64bit/obs-goal-bar.so` |
-
-En Linux:
+**Linux:** built on Ubuntu 24.04 against the OBS from the [official PPA](https://launchpad.net/~obsproject/+archive/ubuntu/obs-studio).
 
 ```bash
 mkdir -p ~/.config/obs-studio/plugins
-tar -xzf obs-goal-bar-<versión>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plugins
+tar -xzf obs-goal-bar-<version>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plugins
 ```
 
-- Windows necesita OBS 33 o posterior. El token de renovación de Twitch se guarda en el Administrador de credenciales de Windows.
-- Linux se compila en Ubuntu 24.04 contra la versión de OBS del PPA del OBS Project. El inicio de sesión de Twitch necesita `libsecret` y un Secret Service activo (GNOME Keyring o KWallet).
-- Ambos están compilados y con pruebas unitarias en CI; todavía no se han ejecutado dentro de OBS.
+Twitch login on Linux needs `libsecret` and a running Secret Service (GNOME Keyring or KWallet); without one, the token isn't saved (it's never kept in plain text).
 
-**Desinstalar:** borra la carpeta `obs-goal-bar` de la carpeta de plugins indicada arriba.
+**Uninstall:** delete `obs-goal-bar.plugin` (macOS) or the `obs-goal-bar` folder (Windows, Linux) from the plugins folder above.
 
----
+## 🚀 Use it in 5 steps
 
-## 🚀 Uso en 5 pasos
-
-1. **Añade la fuente.** En una escena, pulsa **+** y elige **Barra de meta**.
-2. **Elige la plataforma.** **Manual**, **YouTube** (escribe tu `@usuario`), **Twitch** (pulsa **Conectar Twitch** e ingresa el código en twitch.tv/activate) o **Kick** (escribe el nombre del canal; ver abajo).
-3. **Fija la meta.** Elige la métrica y escribe la **Meta**.
-4. **Decide qué pasa al cumplirla.** En **Al cumplir la meta**: animación, una fuente para mostrar y la siguiente meta automática. Pulsa **Probar celebración** para verlo.
-5. **Asigna atajos (opcional).** En **Ajustes > Atajos**, busca la fuente y asigna «Probar celebración» y «Reiniciar meta».
+1. **Add the source.** In a scene, click **+** and pick **Goal Bar**.
+2. **Pick the platform.** **Manual**, **YouTube** (type your `@handle`), **Twitch** (click **Connect Twitch** and enter the code on twitch.tv/activate) or **Kick** (type the channel name, see below).
+3. **Set the goal.** Choose the metric and type the **Goal**.
+4. **Decide what happens when it is reached.** Under **When the goal is reached**: the animation, a source to show and the auto next goal. Click **Test celebration** to preview it.
+5. **Assign hotkeys (optional).** In **Settings → Hotkeys**, find the source and bind "Test celebration" and "Reset goal".
 
 > [!TIP]
-> **Reiniciar meta** empieza la barra de nuevo desde el valor actual. Nunca dispara la celebración, aunque el valor ya esté en la meta.
+> **Reset goal** starts the bar over from the current value. It never fires the celebration, even when the value is already at the goal.
+
+### 🟣 Twitch
+
+Followers work with any account. Subscribers need a Twitch Affiliate or Partner channel; otherwise the bar says so.
 
 ### 🟢 Kick
 
-Elige **Kick** y escribe el nombre del canal (o pega su URL de kick.com). No hace falta cuenta, app ni credenciales de Kick.
+Pick **Kick** and type the channel name (or paste its kick.com URL). No Kick account, app or credentials are needed.
 
-Métricas: **Seguidores** (disponibles en todo momento) y **Espectadores** (se muestran mientras el canal está en directo; si no, «Sin directo»). Los suscriptores de pago no se ofrecen: Kick no los publica en este endpoint. La barra se actualiza cada 20 segundos aproximadamente y espera más (hasta 5 minutos) si Kick limita o bloquea las solicitudes.
+Metrics: **Followers** (readable at any time) and **Viewers** (shown while the channel is live; "Offline" otherwise). Paid subscribers are not offered: Kick does not publish them on this endpoint. The bar refreshes about every 20 seconds and waits longer (up to 5 minutes) if Kick limits or blocks requests.
 
-> ⚠️ Los datos de Kick vienen de un endpoint público **no documentado** (`kick.com/api/v2/channels/<canal>`), el mismo que usa la web de Kick. No forma parte de su API oficial, está detrás de Cloudflare y puede cambiar o dejar de funcionar en cualquier momento. Si Kick bloquea la solicitud, la barra muestra «Kick bloqueó la solicitud» en lugar de un valor falso.
+> [!WARNING]
+> Kick data comes from an **undocumented** public endpoint (`kick.com/api/v2/channels/<channel>`), the one Kick's own website uses. It is not part of Kick's official API, sits behind Cloudflare and may change or stop working at any time. If Kick blocks the request, the bar shows "Kick blocked the request" instead of a made-up value.
 
----
+## 🔄 Updates
 
-## 🔄 Actualizaciones
-
-- **Automáticas.** Al abrir OBS, el plugin consulta la última versión publicada en GitHub, como mucho una vez al día. Si hay una nueva, te muestra un aviso con las notas de la versión y tres opciones: **Instalar al reiniciar**, **Más tarde** u **Omitir esta versión**.
-- **Manual.** En **Herramientas > Goal Bar: Buscar actualizaciones**.
-- **Cómo se aplica.** Al elegir **Instalar al reiniciar**, el paquete se descarga y se verifica (SHA-256 publicado por GitHub). Se instala cuando cierras OBS y queda activo al volver a abrirlo. Si algo falla, se restaura la versión anterior.
+- **Automatic.** When OBS starts, the plugin checks the latest release on GitHub, at most once a day. If there is a newer one, it shows a notice with the release notes and three choices: **Install on next restart**, **Later** or **Skip this version**.
+- **Manual.** Use **Tools → Goal Bar: Check for updates**.
+- **How it applies.** After **Install on next restart**, the package is downloaded from this repository's GitHub Releases and verified against the SHA-256 GitHub publishes. It is installed when you close OBS and is active the next time you open it. If any step fails, the previous version is put back.
 
 > [!NOTE]
-> Solo se actualiza sola una instalación hecha como en las instrucciones de arriba (no dentro de la carpeta del programa OBS ni desde un paquete de la distribución), y tu usuario debe poder escribir en ella. Si no, el aviso enlaza a la página de la versión para descargarla a mano.
+> Only an install made as in the instructions above (not inside the OBS program folder or from a distribution package) updates itself, and your user must be able to write to it. Otherwise the notice links to the release page for a manual download.
 
----
+## ❓ FAQ
 
-## 🛠️ Compilar desde el código
+<details>
+<summary><b>The bar says "Offline" or doesn't move on YouTube</b></summary>
 
-Requisitos: macOS 13 o posterior en Apple Silicon, Xcode y CMake 3.28 o posterior.
+YouTube likes and subscribers are read from your public `/@handle/live` page, so the channel must be live and the stream public. Check the `@handle` in the source properties.
+</details>
+
+<details>
+<summary><b>Twitch subscribers don't show</b></summary>
+
+Twitch only gives subscriber counts for Affiliate or Partner channels. Followers work for every channel.
+</details>
+
+<details>
+<summary><b>Kick says "Kick blocked the request"</b></summary>
+
+Kick's endpoint sits behind Cloudflare and sometimes refuses requests. The bar keeps the last value and retries with longer waits (up to 5 minutes).
+</details>
+
+<details>
+<summary><b>macOS says the plugin is damaged or doesn't load it</b></summary>
+
+Run the `xattr -dr com.apple.quarantine …` command from the install steps. The macOS package is for Apple Silicon only.
+</details>
+
+## 🔐 Privacy
+
+| Data | Where it goes |
+|------|---------------|
+| Twitch login | The refresh token lives in the system keychain (macOS Keychain, Windows Credential Manager or the Linux Secret Service); the access token only in memory |
+| YouTube | The public live page is read; no sign-in, no keys |
+| Network | The plugin only talks to youtube.com, twitch.tv (id.twitch.tv and api.twitch.tv), kick.com and github.com (to check for and download updates). It sends no data anywhere else, and there's no telemetry |
+
+## 🧭 Status
+
+macOS (Apple Silicon) is tested inside OBS. Windows x64 and Linux x86_64 are built, unit-tested and packaged in CI (GitHub Actions); reports from those systems are welcome in [Issues](../../issues).
+
+## 🛠️ Build from source
+
+<details>
+<summary><b>Build and tests</b></summary>
+
+macOS: macOS 13 or later on Apple Silicon, Xcode and CMake 3.28 or later.
 
 ```sh
 cmake --preset macos
 cmake --build --preset macos
 ```
 
-El paquete queda en `build_macos/RelWithDebInfo/obs-goal-bar.plugin`.
+The bundle is written to `build_macos/RelWithDebInfo/obs-goal-bar.plugin`. Windows and Linux are built by `.github/workflows/build.yml`.
 
-El núcleo no depende de OBS ni de Qt, y sus pruebas se compilan con CMake a secas:
+The core depends on neither OBS nor Qt, and its tests build with plain CMake:
 
 ```sh
 cmake -S tests -B build_tests
 cmake --build build_tests
 ctest --test-dir build_tests --output-on-failure
 ```
+</details>
 
----
+## 📄 License
 
-## 🔐 Privacidad
+GPL-2.0-or-later, like every plugin that links against libobs. See [LICENSE](LICENSE).
 
-| Dato | Dónde queda |
-|------|-------------|
-| Sesión de Twitch | El token de renovación vive en el Llavero de macOS; el token de acceso, solo en memoria |
-| YouTube | Se lee la página pública del directo; no hay inicio de sesión ni claves |
-| Todo lo demás | El plugin solo habla con youtube.com, twitch.tv, kick.com y github.com (para buscar actualizaciones). No envía datos a ningún otro sitio |
-
----
-
-## 🧭 Estado
-
-macOS (Apple Silicon) está probado dentro de OBS. Windows x64 y Linux x86_64 se compilan, prueban y empaquetan solo en CI (GitHub Actions).
-
-## Licencia
-
-GPL-2.0-or-later. Consulta [LICENSE](LICENSE).
+AC Goal Bar is an independent project, not affiliated with or endorsed by the OBS Project, YouTube, Twitch or Kick.
