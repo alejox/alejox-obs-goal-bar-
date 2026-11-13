@@ -99,6 +99,56 @@ jobs:
           path: ${{ env.PACKAGE }}
           if-no-files-found: error
 
+  # Same runner and Xcode as multi-chat's macOS job, which builds against OBS 33.
+  macos-arm64:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 26
+        run: |
+          xcode="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          test -n "$xcode" || { echo "No Xcode 26 on this runner"; ls -d /Applications/Xcode*.app; exit 1; }
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      # Configure downloads OBS, obs-deps and Qt; retry transient HTTP errors.
+      - name: Configure
+        run: |
+          for attempt in 1 2 3; do
+            cmake --preset macos && exit 0
+            echo "Configure attempt $attempt failed; retrying in 30 s"
+            rm -rf build_macos
+            sleep 30
+          done
+          exit 1
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build --preset macos 2>&1 | tee build.log || { grep -E "error:|warning:" build.log | sort -u; exit 1; }
+
+      - name: Package
+        run: |
+          version="$(python3 -c "import json; print(json.load(open('buildspec.json'))['version'])")"
+          plugin="$(find build_macos -type d -name 'obs-goal-bar.plugin' -path '*RelWithDebInfo*' | head -1)"
+          test -n "$plugin" || { echo "obs-goal-bar.plugin not found"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$plugin"
+          lipo -archs "$plugin/Contents/MacOS/obs-goal-bar"
+          for file in locale/en-US.ini locale/es-ES.ini fonts/VT323-Regular.ttf fonts/MrDafoe-Regular.ttf fonts/Orbitron-VariableFont_wght.ttf; do
+            test -f "$plugin/Contents/Resources/$file" || { echo "Missing $file"; exit 1; }
+          done
+          package="obs-goal-bar-$version-macos-arm64.zip"
+          ditto -c -k --norsrc --keepParent "$plugin" "$package"
+          echo "PACKAGE=$package" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: obs-goal-bar-macos-arm64
+          path: ${{ env.PACKAGE }}
+          if-no-files-found: error
+
   linux-x86_64:
     runs-on: ubuntu-24.04
     timeout-minutes: 45

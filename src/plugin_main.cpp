@@ -29,6 +29,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QFontDatabase>
+#include <QString>
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -74,6 +77,23 @@ std::unique_ptr<goalbar::ui::UpdateController> make_update_controller()
 		std::move(config), std::filesystem::u8path(module_config_path("update.json")));
 }
 
+// The fonts of the Synthwave, Cyberpunk and Glitch styles: the same Google Fonts
+// that multi-chat and music-now-playing load, bundled so they work offline.
+void load_style_fonts()
+{
+	for (const char *file :
+	     {"fonts/VT323-Regular.ttf", "fonts/MrDafoe-Regular.ttf", "fonts/Orbitron-VariableFont_wght.ttf"}) {
+		char *path = obs_module_file(file);
+		if (path == nullptr) {
+			obs_log(LOG_WARNING, "font not found: %s", file);
+			continue;
+		}
+		if (QFontDatabase::addApplicationFont(QString::fromUtf8(path)) < 0)
+			obs_log(LOG_WARNING, "could not load font %s", path);
+		bfree(path);
+	}
+}
+
 void on_frontend_event(enum obs_frontend_event event, void *)
 {
 	if (event != OBS_FRONTEND_EVENT_EXIT || !updates)
@@ -92,6 +112,7 @@ void on_frontend_event(enum obs_frontend_event event, void *)
 bool obs_module_load(void)
 {
 	goalbar::obs::watch_obs_shutdown();
+	load_style_fonts();
 	goalbar::obs::register_goal_bar_source();
 	updates = make_update_controller();
 	updates->start(kUpdateCheckDelayMs);

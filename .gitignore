@@ -4,6 +4,7 @@
 # Except for project files
 !/cmake
 !/data
+!/docs
 !/odd
 !/src
 !/tests

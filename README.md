@@ -13,7 +13,7 @@
 
 **English** · [Español](README.es.md)
 
-![AC Goal Bar: Minimal, Bold and Neon styles](docs/goal-bar.png)
+![AC Goal Bar: its styles, from Minimal to Glitch](docs/goal-bar.png)
 
 [**⬇️ Download**](../../releases/latest) &nbsp;·&nbsp; [Install](#-install) &nbsp;·&nbsp; [Features](#-features) &nbsp;·&nbsp; [FAQ](#-faq)
 
@@ -27,7 +27,7 @@ A native OBS source (no browser source, no web page, no external app). YouTube a
 
 | | Feature | What it does |
 |:-:|---------|--------------|
-| 📊 | **"Goal Bar" source** | An OBS source with a title, current value / goal and a bar that fills with a smooth animation. Three styles (Minimal, Bold, Neon), accent and text color, and size |
+| 📊 | **"Goal Bar" source** | An OBS source with a title, current value / goal and a bar that fills with a smooth animation. Styles: Minimal, Bold and Neon (just the bar) plus the same card styles as multi-chat and Music Now Playing — Glass, Pill, macOS window, Line, Synthwave, Neon city, Cyberpunk, Retro and Glitch (VHS, with its jumps) — with background opacity, accent and text color, and size |
 | ▶️ | **YouTube, public mode** | Reads the live stream's likes and subscribers from the channel's public page (`@handle`), no sign-in |
 | 🟣 | **Twitch** | Followers and subscribers through the official API. Connect your account with a code on twitch.tv/activate |
 | 🟢 | **Kick** | Followers and viewers of any channel, no Kick account or app needed (undocumented public endpoint, see below) |

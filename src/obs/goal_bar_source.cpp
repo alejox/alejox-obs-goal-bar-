@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <atomic>
 #include <climits>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -41,6 +42,7 @@ constexpr const char *kTitleKey = "title";
 constexpr const char *kStyleKey = "style";
 constexpr const char *kAccentKey = "accent_color";
 constexpr const char *kTextColorKey = "text_color";
+constexpr const char *kOpacityKey = "bg_opacity";
 constexpr const char *kWidthKey = "width";
 constexpr const char *kHeightKey = "height";
 constexpr const char *kResetKey = "reset_goal";
@@ -61,6 +63,7 @@ constexpr long long kDefaultWidth = 800;
 constexpr long long kDefaultHeight = 120;
 constexpr long long kDefaultAccent = 0xFF6E3DFF; // OBS colors are 0xAABBGGRR
 constexpr long long kDefaultTextColor = 0xFFFFFFFF;
+constexpr long long kDefaultOpacity = 85; // as in multi-chat and music-now-playing
 
 constexpr const char *kIntGoalKeys[] = {settings_key::kStart, settings_key::kTarget, settings_key::kCurrent,
 					settings_key::kStep};
@@ -91,6 +94,8 @@ struct GoalBarSource {
 	std::optional<CelebrationFrame> celebration; // drawn while set
 	ProgressTween fill;     // the fill shown on screen, gliding to the goal progress
 	long long revision = 0; // see kRevisionKey
+	double style_clock = 0.0; // seconds into the Glitch loop
+	int painted_style_step = 0; // Glitch step of the last painted frame
 
 	// Goal-reached side effects; outlives every call into this source.
 	std::unique_ptr<GoalActions> actions;
@@ -147,6 +152,7 @@ render::BarStyle read_style(obs_data_t *settings)
 	style.preset = style_preset_from_id(obs_data_get_string(settings, kStyleKey));
 	style.accent = color_from_obs(obs_data_get_int(settings, kAccentKey));
 	style.text = color_from_obs(obs_data_get_int(settings, kTextColorKey));
+	style.opacity = static_cast<int>(std::clamp(obs_data_get_int(settings, kOpacityKey), 0LL, 100LL));
 	return style;
 }
 
@@ -187,6 +193,13 @@ std::string status_text(const MetricReading &reading)
 	}
 }
 
+// Which frame of the style's own animation shows now (0 for still styles).
+// Caller holds update_mutex.
+int style_step(const GoalBarSource &self)
+{
+	return style_animates(self.style.preset) ? glitch_frame(self.style_clock).step : 0;
+}
+
 // Paints the current goal and hands the frame to the graphics thread.
 // Caller holds update_mutex.
 void repaint_locked(GoalBarSource &self)
@@ -195,9 +208,10 @@ void repaint_locked(GoalBarSource &self)
 	const uint32_t height = self.height;
 	GoalView view = build_goal_view(self.goal, self.title, self.status);
 	view.progress = self.fill.value(); // the label shows the new value at once
+	self.painted_style_step = style_step(self);
 	QImage image = render::GoalBarPainter::paint(view, self.style, QSize(int(width), int(height)),
 						     QString::fromUtf8(obs_module_text("GoalBar.Reached")),
-						     self.celebration ? &*self.celebration : nullptr);
+						     self.celebration ? &*self.celebration : nullptr, self.style_clock);
 
 	std::lock_guard image_lock(self.image_mutex);
 	self.image = std::move(image);
@@ -428,8 +442,8 @@ bool advance_goal_locked(GoalBarSource &self)
 	return true;
 }
 
-// Advances the goal actions and the fill animation; repaints only while
-// something moves.
+// Advances the goal actions, the fill and the style animations; repaints
+// only while something moves (Glitch: only when its step changes).
 void animate(GoalBarSource &self, float seconds)
 {
 	const GoalActions::Tick tick = self.actions->tick(seconds);
@@ -437,7 +451,9 @@ void animate(GoalBarSource &self, float seconds)
 	{
 		std::lock_guard update_lock(self.update_mutex);
 		const bool filling = self.fill.tick(seconds);
-		if (!tick.repaint && !tick.advance && !filling)
+		self.style_clock = std::fmod(self.style_clock + seconds, kGlitchPeriodSeconds);
+		const bool restyled = style_step(self) != self.painted_style_step;
+		if (!tick.repaint && !tick.advance && !filling && !restyled)
 			return;
 		self.celebration = tick.frame;
 		if (tick.advance)
@@ -638,6 +654,7 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_string(settings, kStyleKey, std::string(style_preset_id(StylePreset::Minimal)).c_str());
 	obs_data_set_default_int(settings, kAccentKey, kDefaultAccent);
 	obs_data_set_default_int(settings, kTextColorKey, kDefaultTextColor);
+	obs_data_set_default_int(settings, kOpacityKey, kDefaultOpacity);
 	obs_data_set_default_int(settings, kWidthKey, kDefaultWidth);
 	obs_data_set_default_int(settings, kHeightKey, kDefaultHeight);
 	set_action_defaults(settings);
@@ -744,15 +761,63 @@ void add_metric_list(obs_properties_t *props)
 	obs_property_set_modified_callback(list, metric_changed);
 }
 
+const char *style_label(StylePreset preset)
+{
+	switch (preset) {
+	case StylePreset::Bold:
+		return "Style.Bold";
+	case StylePreset::Neon:
+		return "Style.Neon";
+	case StylePreset::Glass:
+		return "Style.Glass";
+	case StylePreset::Pill:
+		return "Style.Pill";
+	case StylePreset::MacOS:
+		return "Style.MacOS";
+	case StylePreset::Line:
+		return "Style.Line";
+	case StylePreset::Synthwave:
+		return "Style.Synthwave";
+	case StylePreset::NeonCity:
+		return "Style.NeonCity";
+	case StylePreset::Cyber:
+		return "Style.Cyber";
+	case StylePreset::Retro:
+		return "Style.Retro";
+	case StylePreset::Glitch:
+		return "Style.Glitch";
+	case StylePreset::Minimal:
+	default:
+		return "Style.Minimal";
+	}
+}
+
+// Only the controls that affect the chosen style show: the colors where the
+// style takes them, the opacity where there is a card behind the bar.
+void show_style_controls(obs_properties_t *props, obs_data_t *settings)
+{
+	const StylePreset preset = style_preset_from_id(obs_data_get_string(settings, kStyleKey));
+	const bool custom = style_uses_custom_colors(preset);
+	obs_property_set_visible(obs_properties_get(props, kAccentKey), custom);
+	obs_property_set_visible(obs_properties_get(props, kTextColorKey), custom);
+	obs_property_set_visible(obs_properties_get(props, kOpacityKey), style_has_card(preset));
+}
+
+bool style_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
+{
+	show_style_controls(props, settings);
+	return true;
+}
+
 void add_style_list(obs_properties_t *props)
 {
 	obs_property_t *list = obs_properties_add_list(props, kStyleKey, obs_module_text("GoalBar.Style"),
 						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	const std::pair<StylePreset, const char *> styles[] = {{StylePreset::Minimal, "Style.Minimal"},
-							       {StylePreset::Bold, "Style.Bold"},
-							       {StylePreset::Neon, "Style.Neon"}};
-	for (const auto &[preset, label] : styles)
-		obs_property_list_add_string(list, obs_module_text(label), std::string(style_preset_id(preset)).c_str());
+	for (StylePreset preset : kStylePresets)
+		obs_property_list_add_string(list, obs_module_text(style_label(preset)),
+					     std::string(style_preset_id(preset)).c_str());
+	obs_property_set_long_description(list, obs_module_text("GoalBar.StyleHelp"));
+	obs_property_set_modified_callback(list, style_changed);
 }
 
 obs_properties_t *goal_bar_properties(void *data)
@@ -774,6 +839,9 @@ obs_properties_t *goal_bar_properties(void *data)
 	add_style_list(props);
 	obs_properties_add_color_alpha(props, kAccentKey, obs_module_text("GoalBar.AccentColor"));
 	obs_properties_add_color_alpha(props, kTextColorKey, obs_module_text("GoalBar.TextColor"));
+	obs_property_t *opacity =
+		obs_properties_add_int_slider(props, kOpacityKey, obs_module_text("GoalBar.Opacity"), 0, 100, 5);
+	obs_property_int_set_suffix(opacity, " %");
 	obs_properties_add_int(props, kWidthKey, obs_module_text("GoalBar.Width"), 16, 4096, 1);
 	obs_properties_add_int(props, kHeightKey, obs_module_text("GoalBar.Height"), 16, 4096, 1);
 	obs_properties_add_button2(props, kResetKey, obs_module_text("GoalBar.ResetGoal"), reset_goal_clicked, data);

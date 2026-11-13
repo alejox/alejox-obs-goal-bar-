@@ -1,5 +1,8 @@
 #include "render/goal_bar_painter.hpp"
 
+#include "render/card_painter.hpp"
+#include "render/paint_common.hpp"
+
 #include <QFont>
 #include <QFontMetricsF>
 #include <QLinearGradient>
@@ -39,27 +42,9 @@ Layout layout_for(StylePreset preset, QSizeF size)
 	return layout;
 }
 
-QFont font_with(qreal pixel_size, QFont::Weight weight)
-{
-	QFont font;
-	font.setPixelSize(std::max(1, static_cast<int>(pixel_size)));
-	font.setWeight(weight);
-	font.setStyleStrategy(QFont::PreferAntialias);
-	return font;
-}
-
-QColor with_alpha(QColor color, int alpha)
-{
-	color.setAlpha(alpha);
-	return color;
-}
-
 QPainterPath rounded(const QRectF &rect)
 {
-	QPainterPath path;
-	const qreal radius = rect.height() / 2;
-	path.addRoundedRect(rect, radius, radius);
-	return path;
+	return bar_path(rect);
 }
 
 // Draws text elided to fit `rect`. Neon adds a soft accent halo behind it.
@@ -99,6 +84,8 @@ void draw_track(QPainter &painter, StylePreset preset, const QRectF &bar, const 
 		painter.fillPath(track, QColor(10, 10, 20, 200));
 		break;
 	}
+	default: // card styles are painted by paint_card
+		break;
 	}
 }
 
@@ -131,30 +118,33 @@ void draw_neon_outline(QPainter &painter, const QRectF &bar, const BarStyle &sty
 	painter.drawPath(rounded(bar));
 }
 
-// Pulsing halo around the track plus a brightening of the bar itself.
-void draw_glow(QPainter &painter, const QRectF &bar, const BarStyle &style, double glow)
+} // namespace
+
+void draw_celebration_glow(QPainter &painter, const QPainterPath &track, qreal bar_height, const QColor &accent,
+			   double glow)
 {
 	if (glow <= 0.0)
 		return;
-	const QPainterPath track = rounded(bar);
-	const qreal reach = bar.height() * 0.45;
+	const qreal reach = bar_height * 0.45;
 	painter.save();
 	painter.setBrush(Qt::NoBrush);
 	for (int i = 4; i >= 1; --i) {
-		painter.setPen(QPen(with_alpha(style.accent, static_cast<int>(glow * 30 * (5 - i))), reach * i / 2.0));
+		painter.setPen(QPen(with_alpha(accent, static_cast<int>(glow * 30 * (5 - i))), reach * i / 2.0));
 		painter.drawPath(track);
 	}
-	painter.fillPath(track, with_alpha(style.accent.lighter(170), static_cast<int>(glow * 110)));
+	painter.fillPath(track, with_alpha(accent.lighter(170), static_cast<int>(glow * 110)));
 	painter.restore();
 }
 
-QColor confetti_color(int slot, const BarStyle &style)
+namespace {
+
+QColor confetti_color(int slot, const QColor &accent)
 {
 	switch (slot) {
 	case 0:
-		return style.accent;
+		return accent;
 	case 1:
-		return style.accent.lighter(160);
+		return accent.lighter(160);
 	case 2:
 		return QColor(255, 210, 74); // gold
 	case 3:
@@ -164,13 +154,15 @@ QColor confetti_color(int slot, const BarStyle &style)
 	}
 }
 
-void draw_confetti(QPainter &painter, QSizeF size, const CelebrationFrame &frame, const BarStyle &style)
+} // namespace
+
+void draw_confetti(QPainter &painter, QSizeF size, const CelebrationFrame &frame, const QColor &accent)
 {
 	painter.save();
 	painter.setPen(Qt::NoPen);
 	for (const ConfettiParticle &piece : frame.confetti) {
 		const qreal side = std::max<qreal>(3.0, piece.size * size.height());
-		const QColor color = with_alpha(confetti_color(piece.color, style), static_cast<int>(piece.alpha * 255));
+		const QColor color = with_alpha(confetti_color(piece.color, accent), static_cast<int>(piece.alpha * 255));
 		painter.save();
 		painter.translate(piece.x * size.width(), piece.y * size.height());
 		painter.rotate(piece.angle * 57.29577951308232);
@@ -180,27 +172,28 @@ void draw_confetti(QPainter &painter, QSizeF size, const CelebrationFrame &frame
 	painter.restore();
 }
 
-} // namespace
-
 QImage GoalBarPainter::paint(const GoalView &view, const BarStyle &style, QSize size, const QString &reached_text,
-			     const CelebrationFrame *celebration)
+			     const CelebrationFrame *celebration, double clock_seconds)
 {
 	QImage image(size, QImage::Format_ARGB32_Premultiplied);
 	image.fill(Qt::transparent);
 	if (size.isEmpty())
 		return image;
 
-	const StylePreset preset = style.preset;
-	const Layout layout = layout_for(preset, QSizeF(size));
-
 	QPainter painter(&image);
 	painter.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing | QPainter::SmoothPixmapTransform);
+	if (style_has_card(style.preset)) {
+		paint_card(painter, view, style, QSizeF(size), reached_text, celebration, clock_seconds);
+		return image;
+	}
 
+	const StylePreset preset = style.preset;
+	const Layout layout = layout_for(preset, QSizeF(size));
 	const bool celebrating = celebration && celebration->active;
 	draw_track(painter, preset, layout.bar, style);
 	draw_fill(painter, preset, layout.bar, view.progress, style);
 	if (celebrating)
-		draw_glow(painter, layout.bar, style, celebration->glow);
+		draw_celebration_glow(painter, rounded(layout.bar), layout.bar.height(), style.accent, celebration->glow);
 	if (preset == StylePreset::Neon)
 		draw_neon_outline(painter, layout.bar, style);
 
@@ -231,7 +224,7 @@ QImage GoalBarPainter::paint(const GoalView &view, const BarStyle &style, QSize 
 		draw_text(painter, title_rect, title, Qt::AlignLeft | Qt::AlignBottom, title_color, halo);
 
 	if (celebrating)
-		draw_confetti(painter, QSizeF(size), *celebration, style);
+		draw_confetti(painter, QSizeF(size), *celebration, style.accent);
 
 	return image;
 }

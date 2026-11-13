@@ -43,6 +43,7 @@ target_sources(
     src/obs/obs_shutdown.cpp
     src/obs/provider_factory.cpp
     src/obs/twitch_services.cpp
+    src/render/card_painter.cpp
     src/render/goal_bar_painter.cpp
     src/secrets/platform_secret_store.cpp
     src/ui/twitch_connect_dialog.cpp
