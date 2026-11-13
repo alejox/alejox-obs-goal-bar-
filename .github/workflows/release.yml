@@ -1,0 +1,75 @@
+name: Release
+
+# Publishes a GitHub Release with the macOS, Windows and Linux packages built by build.yml.
+# Runs when a change to "version" in buildspec.json reaches main, when a v<version> tag is
+# pushed, or by hand (Actions → Release → Run workflow). The tag is always v<version>; if it
+# already exists, nothing is published. The notes come from .github/release-notes/v<version>.md.
+on:
+  push:
+    branches: [main]
+    paths: [buildspec.json]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
+      publish: ${{ steps.tag.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version and tag
+        id: tag
+        run: |
+          tag="v$(python3 -c "import json; print(json.load(open('buildspec.json'))['version'])")"
+          echo "name=$tag" >> "$GITHUB_OUTPUT"
+          test -f ".github/release-notes/$tag.md" || { echo "Missing .github/release-notes/$tag.md"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            [ "$tag" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME but buildspec.json says $tag"; exit 1; }
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists: nothing to publish (bump the version in buildspec.json)."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Check the packages
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          version="${TAG#v}"
+          ls -la dist
+          for file in "obs-goal-bar-$version-macos-arm64.zip" "obs-goal-bar-$version-windows-x64.zip" \
+                      "obs-goal-bar-$version-linux-x86_64.tar.gz"; do
+            test -s "dist/$file" || { echo "Missing $file"; exit 1; }
+          done
+          unzip -l "dist/obs-goal-bar-$version-macos-arm64.zip" | grep -q 'obs-goal-bar.plugin/Contents/MacOS/obs-goal-bar$'
+          unzip -l "dist/obs-goal-bar-$version-windows-x64.zip" | grep -q 'obs-goal-bar/bin/64bit/obs-goal-bar.dll$'
+          unzip -l "dist/obs-goal-bar-$version-windows-x64.zip" | grep -q 'obs-goal-bar/data/fonts/VT323-Regular.ttf$'
+          tar -tzf "dist/obs-goal-bar-$version-linux-x86_64.tar.gz" | grep -q 'obs-goal-bar/data/fonts/VT323-Regular.ttf$'
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" \
+            --notes-file ".github/release-notes/$TAG.md"

@@ -7,6 +7,7 @@ on:
       - feat/goal-bar
   pull_request:
   workflow_dispatch:
+  workflow_call: # release.yml builds the packages it publishes
 
 permissions:
   contents: read
@@ -128,6 +129,12 @@ jobs:
         run: |
           set -o pipefail
           cmake --build --preset macos 2>&1 | tee build.log || { grep -E "error:|warning:" build.log | sort -u; exit 1; }
+
+      - name: Test
+        run: |
+          cmake -S tests -B build_tests -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build_tests --parallel
+          ctest --test-dir build_tests --output-on-failure
 
       - name: Package
         run: |
