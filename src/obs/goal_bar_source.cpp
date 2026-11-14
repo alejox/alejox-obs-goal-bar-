@@ -786,6 +786,10 @@ const char *style_label(StylePreset preset)
 		return "Style.Retro";
 	case StylePreset::Glitch:
 		return "Style.Glitch";
+	case StylePreset::Gta6:
+		return "Style.Gta6";
+	case StylePreset::Gta6Disc:
+		return "Style.Gta6Disc";
 	case StylePreset::Minimal:
 	default:
 		return "Style.Minimal";

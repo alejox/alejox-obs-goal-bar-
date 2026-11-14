@@ -6,14 +6,31 @@
 namespace goalbar {
 
 // Minimal, Bold and Neon are the original bar-only looks. The others are the
-// card styles shared with multi-chat and music-now-playing (same ids).
-enum class StylePreset { Minimal, Bold, Neon, Glass, Pill, MacOS, Line, Synthwave, NeonCity, Cyber, Retro, Glitch };
+// card styles shared with multi-chat and music-now-playing (same ids); the two
+// GTA 6 (Vice City) ones come from music-now-playing.
+enum class StylePreset {
+	Minimal,
+	Bold,
+	Neon,
+	Glass,
+	Pill,
+	MacOS,
+	Line,
+	Synthwave,
+	NeonCity,
+	Cyber,
+	Retro,
+	Glitch,
+	Gta6,
+	Gta6Disc
+};
 
 // In the order the properties list shows them.
 inline constexpr StylePreset kStylePresets[] = {
 	StylePreset::Minimal, StylePreset::Bold, StylePreset::Neon, StylePreset::Glass,
 	StylePreset::Pill, StylePreset::MacOS, StylePreset::Line, StylePreset::Synthwave,
-	StylePreset::NeonCity, StylePreset::Cyber, StylePreset::Retro, StylePreset::Glitch};
+	StylePreset::NeonCity, StylePreset::Cyber, StylePreset::Retro, StylePreset::Glitch,
+	StylePreset::Gta6, StylePreset::Gta6Disc};
 
 // Stable ids used for settings persistence. Never change an existing id.
 std::string_view style_preset_id(StylePreset preset);

@@ -27,7 +27,7 @@ Una fuente nativa de OBS (sin fuente de navegador, sin página web, sin app apar
 
 | | Función | Qué hace |
 |:-:|---------|----------|
-| 📊 | **Fuente «Barra de meta»** | Una fuente de OBS con título, valor actual / meta y una barra que se llena con una animación suave. Estilos: Minimalista, Intenso y Neón (solo la barra) y los mismos estilos de tarjeta que multi-chat y Music Now Playing — Cristal, Píldora, Ventana macOS, Línea, Synthwave, Ciudad neón, Cyberpunk, Retro y Glitch (VHS, con sus saltos) —, con opacidad del fondo, color de acento y de texto, y tamaño |
+| 📊 | **Fuente «Barra de meta»** | Una fuente de OBS con título, valor actual / meta y una barra que se llena con una animación suave. Estilos: Minimalista, Intenso y Neón (solo la barra) y los mismos estilos de tarjeta que multi-chat y Music Now Playing — Cristal, Píldora, Ventana macOS, Línea, Synthwave, Ciudad neón, Cyberpunk, Retro y Glitch (VHS, con sus saltos) — y los dos estilos GTA 6 (Vice City) de Music Now Playing, uno con vinilo —, con opacidad del fondo, color de acento y de texto, y tamaño |
 | ▶️ | **YouTube, modo público** | Lee los me gusta y los suscriptores del directo desde la página pública del canal (`@usuario`), sin iniciar sesión |
 | 🟣 | **Twitch** | Seguidores y suscriptores con la API oficial. Conectas tu cuenta con un código en twitch.tv/activate |
 | 🟢 | **Kick** | Seguidores y espectadores de cualquier canal, sin cuenta ni app de Kick (endpoint público no documentado, ver abajo) |

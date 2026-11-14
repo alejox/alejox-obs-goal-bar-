@@ -67,11 +67,27 @@ struct Theme {
 	qreal pad_left = 24;
 	qreal pad_right = 24;
 	qreal title_inset = 0; // room for the macOS window buttons
+	qreal bar_share = 0.24; // bar height, as a share of the content height
+	QColor fill_end;        // valid: the fill is a left-to-right gradient accent → fill_end
+	QColor outer_glow;      // valid: a neon glow around the card
+	qreal outer_glow_px = 0;
+	bool uppercase_title = false;
+	qreal value_spacing = 100; // QFont percentage letter spacing of the value
+	bool equalizer = false;    // GTA 6: three bars in front of the value
 };
 
 const QStringList kScriptFonts{"Mr Dafoe", "Brush Script MT", "Segoe Script", "Snell Roundhand"};
 const QStringList kHudFonts{"Orbitron", "Eurostile", "Bank Gothic", "Arial Black"};
 const QStringList kVhsFonts{"VT323", "Courier New", "Courier", "Monospace"};
+const QStringList kViceFonts{"Anton", "Bebas Neue", "Impact", "Arial Narrow"};
+
+// The Vice City pink → orange of the GTA 6 styles.
+const QColor kVicePink(0xff, 0x3d, 0x9a);
+const QColor kViceOrange(0xff, 0x8a, 0x3d);
+
+// Size of the GTA 6 vinyl against the card height, and its distance from the left edge.
+constexpr qreal kVinylShare = 0.8;
+constexpr qreal kVinylLeft = 16;
 
 Theme glass_theme(const BarStyle &style)
 {
@@ -185,6 +201,34 @@ Theme theme_for(const BarStyle &style)
 		theme.value_weight = QFont::Normal;
 		theme.title_scale = 1.25;
 		theme.value_scale = 1.25;
+		return theme;
+	case StylePreset::Gta6:
+	case StylePreset::Gta6Disc:
+		// Dark card with a pink neon rim, condensed uppercase title and a pink → orange bar.
+		theme.radius = 18;
+		theme.shadow = 0.4;
+		theme.outer_glow = rgba(255, 60, 160, 0.45);
+		theme.outer_glow_px = 14;
+		theme.title = QColor(255, 255, 255);
+		theme.value = QColor(0xff, 0x4f, 0xa3);
+		theme.reached = kViceOrange;
+		theme.accent = QColor(0xff, 0x4f, 0xa3);
+		theme.fill_end = kViceOrange;
+		theme.track = rgba(255, 255, 255, 0.13);
+		theme.bar_share = 0.16;
+		theme.title_families = kViceFonts;
+		theme.value_families = kViceFonts;
+		theme.title_weight = QFont::Normal;
+		theme.value_weight = QFont::Normal;
+		theme.title_scale = 0.9; // Anton is tall: keep its caps inside the padding
+		theme.value_scale = 0.72;
+		theme.value_spacing = 108;
+		theme.uppercase_title = true;
+		theme.equalizer = true;
+		theme.pad_left = 26;
+		theme.pad_right = 26;
+		if (style.preset == StylePreset::Gta6Disc)
+			theme.pad_left = kVinylLeft + kVinylShare * 100 + 18;
 		return theme;
 	case StylePreset::Glass:
 	default:
@@ -570,6 +614,68 @@ void draw_glitch(QPainter &p, const QPainterPath &shape, const QRectF &card, qre
 	draw_border(p, shape, rgba(255, 255, 255, 0.14), u);
 }
 
+// GTA 6 vinyl: black grooves around a pink label, with a faint pink rim.
+void draw_vinyl(QPainter &p, const QRectF &card, qreal u)
+{
+	const qreal d = card.height() * kVinylShare;
+	const QRectF disc(card.left() + kVinylLeft * u, card.center().y() - d / 2, d, d);
+	const QPointF c = disc.center();
+	const qreal r = d / 2;
+	p.save();
+	p.setPen(Qt::NoPen);
+	// Drop shadow under the record.
+	for (int i = 3; i >= 1; --i) {
+		p.setBrush(rgba(0, 0, 0, 0.12));
+		p.drawEllipse(c + QPointF(0, 4 * u), r + 3 * u * i, r + 3 * u * i);
+	}
+	p.setBrush(QColor(0x15, 0x10, 0x15));
+	p.drawEllipse(c, r, r);
+	// repeating-radial-gradient(#151015 0 2px, #222 2px 3px): a lighter groove every 3 px.
+	p.setBrush(Qt::NoBrush);
+	p.setPen(QPen(QColor(0x2e, 0x2a, 0x2e), std::max<qreal>(0.6, u)));
+	for (qreal k = 2.5 * u; k < r; k += 3 * u)
+		p.drawEllipse(c, k, k);
+	// A soft sheen so it reads as vinyl.
+	QLinearGradient sheen(disc.topLeft(), disc.bottomRight());
+	sheen.setColorAt(0.0, rgba(255, 255, 255, 0.0));
+	sheen.setColorAt(0.45, rgba(255, 255, 255, 0.07));
+	sheen.setColorAt(0.55, rgba(255, 255, 255, 0.0));
+	p.setPen(Qt::NoPen);
+	p.setBrush(sheen);
+	p.drawEllipse(c, r, r);
+	// Center label. Bigger than in music-now-playing, where the album art sits next to the
+	// record; here the record is the only picture on the card.
+	p.setBrush(QColor(0x2a, 0x0a, 0x22));
+	p.drawEllipse(c, r * 0.36, r * 0.36);
+	QLinearGradient label(c - QPointF(r * 0.33, 0), c + QPointF(r * 0.33, 0));
+	label.setColorAt(0.0, kVicePink);
+	label.setColorAt(1.0, kViceOrange);
+	p.setBrush(label);
+	p.drawEllipse(c, r * 0.32, r * 0.32);
+	p.setBrush(QColor(0x2a, 0x0a, 0x22));
+	p.drawEllipse(c, r * 0.03 + 0.5, r * 0.03 + 0.5);
+	p.setBrush(Qt::NoBrush);
+	p.setPen(QPen(rgba(255, 92, 170, 0.35), std::max<qreal>(1.0, u)));
+	p.drawEllipse(c, r, r);
+	p.restore();
+}
+
+void draw_gta6(QPainter &p, const QPainterPath &shape, const QRectF &card, qreal u, qreal alpha, bool vinyl)
+{
+	QLinearGradient night = css_gradient(card, 120);
+	night.setColorAt(0.0, rgba(48, 14, 40, alpha));
+	night.setColorAt(1.0, rgba(26, 10, 26, alpha));
+	p.fillPath(shape, night);
+	draw_inset_glow(p, shape, rgba(255, 60, 160, 0.12), 18 * u);
+	if (vinyl) {
+		p.save();
+		p.setClipPath(shape, Qt::IntersectClip);
+		draw_vinyl(p, card, u);
+		p.restore();
+	}
+	draw_border(p, shape, rgba(255, 92, 170, 0.75), 1.5 * u);
+}
+
 void draw_background(QPainter &p, const BarStyle &style, const QPainterPath &shape, const QRectF &card, qreal u)
 {
 	const qreal alpha = std::clamp(style.opacity, 0, 100) / 100.0;
@@ -592,10 +698,56 @@ void draw_background(QPainter &p, const BarStyle &style, const QPainterPath &sha
 	case StylePreset::Glitch:
 		draw_glitch(p, shape, card, u, alpha);
 		break;
+	case StylePreset::Gta6:
+	case StylePreset::Gta6Disc:
+		draw_gta6(p, shape, card, u, alpha, style.preset == StylePreset::Gta6Disc);
+		break;
 	default:
 		draw_glass(p, shape, card, u, alpha, style.accent);
 		break;
 	}
+}
+
+// A neon glow outside the card (CSS box-shadow 0 0 <reach> <color>).
+void draw_outer_glow(QPainter &p, const QPainterPath &shape, QSizeF size, qreal margin, const QColor &color,
+		     qreal reach)
+{
+	if (!color.isValid() || reach <= 0.0)
+		return;
+	reach = std::min(reach, margin);
+	QPainterPath outside;
+	outside.addRect(QRectF(QPointF(0, 0), size));
+	outside = outside.subtracted(shape);
+	p.save();
+	p.setClipPath(outside);
+	p.setBrush(Qt::NoBrush);
+	for (int i = 4; i >= 1; --i) {
+		p.setPen(QPen(with_alpha(color, color.alpha() * 3 / 10), reach * i / 2.0, Qt::SolidLine, Qt::RoundCap,
+			      Qt::RoundJoin));
+		p.drawPath(shape);
+	}
+	p.restore();
+}
+
+// GTA 6: three pink → orange bars standing on the text baseline, ending at `right`.
+qreal draw_equalizer(QPainter &p, qreal right, qreal baseline, qreal height)
+{
+	const qreal bar = std::max<qreal>(1.5, height * 0.26);
+	const qreal gap = bar * 0.66;
+	const qreal heights[] = {0.36, 0.64, 1.0}; // still, in steps (the paused look)
+	const qreal width = 3 * bar + 2 * gap;
+	QLinearGradient fill(0, baseline, 0, baseline - height);
+	fill.setColorAt(0.0, kVicePink);
+	fill.setColorAt(1.0, kViceOrange);
+	p.save();
+	p.setPen(Qt::NoPen);
+	p.setBrush(fill);
+	for (int i = 0; i < 3; ++i) {
+		const qreal h = height * heights[i];
+		p.drawRoundedRect(QRectF(right - width + i * (bar + gap), baseline - h, bar, h), bar * 0.3, bar * 0.3);
+	}
+	p.restore();
+	return width;
 }
 
 void draw_mac_buttons(QPainter &p, qreal left, qreal center_y, qreal u)
@@ -676,7 +828,14 @@ void draw_bar(QPainter &p, const Theme &theme, const QRectF &bar, double progres
 			}
 			p.restore();
 		}
-		p.fillPath(fill_path, theme.accent);
+		if (theme.fill_end.isValid()) {
+			QLinearGradient vice(bar.left(), 0, bar.right(), 0);
+			vice.setColorAt(0.0, theme.accent);
+			vice.setColorAt(1.0, theme.fill_end);
+			p.fillPath(fill_path, vice);
+		} else {
+			p.fillPath(fill_path, theme.accent);
+		}
 	}
 	if (theme.track_border_w > 0) {
 		p.save();
@@ -698,11 +857,12 @@ void draw_card(QPainter &p, const GoalView &view, const BarStyle &style, const T
 	const qreal u = layout.u;
 	const QPainterPath shape = shape_path(theme, card, u);
 	draw_drop_shadow(p, shape, size, layout.margin, u, theme.shadow);
+	draw_outer_glow(p, shape, size, layout.margin, theme.outer_glow, theme.outer_glow_px * u);
 	draw_background(p, style, shape, card, u);
 
 	const qreal pad_y = 15 * u;
 	const QRectF content = card.adjusted(theme.pad_left * u, pad_y, -theme.pad_right * u, -pad_y);
-	const qreal bar_height = std::max<qreal>(4.0, content.height() * 0.24);
+	const qreal bar_height = std::max<qreal>(4.0, content.height() * theme.bar_share);
 	const qreal gap = content.height() * 0.1;
 	const QRectF bar(content.left(), content.bottom() - bar_height, content.width(), bar_height);
 	const QRectF text_row(content.left(), content.top(), content.width(),
@@ -712,10 +872,18 @@ void draw_card(QPainter &p, const GoalView &view, const BarStyle &style, const T
 	draw_bar(p, theme, bar, view.progress, u, celebration);
 
 	const QString value = QString::fromStdString(view.value_label);
-	p.setFont(font_with(text_px * theme.value_scale, theme.value_weight, theme.value_families));
+	QFont value_font = font_with(text_px * theme.value_scale, theme.value_weight, theme.value_families);
+	value_font.setLetterSpacing(QFont::PercentageSpacing, theme.value_spacing);
+	p.setFont(value_font);
 	const QFontMetricsF value_metrics(p.font());
-	const qreal value_width = std::min(value_metrics.horizontalAdvance(value) + 1.0, text_row.width());
+	qreal value_width = std::min(value_metrics.horizontalAdvance(value) + 1.0, text_row.width());
 	draw_text_fx(p, text_row, value, Qt::AlignRight, theme.value, theme.value_fx, u);
+	if (theme.equalizer) {
+		const qreal baseline = text_row.bottom() - value_metrics.descent();
+		const qreal gap = value_metrics.capHeight() * 0.35;
+		value_width += gap + draw_equalizer(p, text_row.right() - value_width - gap, baseline,
+						    value_metrics.capHeight() * 0.8);
+	}
 
 	if (style.preset == StylePreset::MacOS) {
 		const qreal center_y = text_row.bottom() - value_metrics.descent() - value_metrics.capHeight() / 2;
@@ -723,7 +891,9 @@ void draw_card(QPainter &p, const GoalView &view, const BarStyle &style, const T
 	}
 
 	const bool show_reached = view.reached || (celebration && celebration->active);
-	const QString title = show_reached ? reached_text : QString::fromStdString(view.title);
+	QString title = show_reached ? reached_text : QString::fromStdString(view.title);
+	if (theme.uppercase_title)
+		title = title.toUpper();
 	QRectF title_rect = text_row;
 	title_rect.setLeft(text_row.left() + theme.title_inset * u);
 	title_rect.setRight(text_row.right() - value_width - text_px * 0.6);

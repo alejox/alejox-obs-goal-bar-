@@ -31,6 +31,10 @@ std::string_view style_preset_id(StylePreset preset)
 		return "retro";
 	case StylePreset::Glitch:
 		return "glitch";
+	case StylePreset::Gta6:
+		return "gta6";
+	case StylePreset::Gta6Disc:
+		return "gta6disc";
 	}
 	return "minimal";
 }
