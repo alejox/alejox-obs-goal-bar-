@@ -143,7 +143,7 @@ jobs:
           test -n "$plugin" || { echo "obs-goal-bar.plugin not found"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$plugin"
           lipo -archs "$plugin/Contents/MacOS/obs-goal-bar"
-          for file in locale/en-US.ini locale/es-ES.ini fonts/VT323-Regular.ttf fonts/MrDafoe-Regular.ttf fonts/Orbitron-VariableFont_wght.ttf; do
+          for file in locale/en-US.ini locale/es-ES.ini fonts/VT323-Regular.ttf fonts/MrDafoe-Regular.ttf fonts/Orbitron-VariableFont_wght.ttf fonts/Anton-Regular.ttf; do
             test -f "$plugin/Contents/Resources/$file" || { echo "Missing $file"; exit 1; }
           done
           package="obs-goal-bar-$version-macos-arm64.zip"

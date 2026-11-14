@@ -77,12 +77,13 @@ std::unique_ptr<goalbar::ui::UpdateController> make_update_controller()
 		std::move(config), std::filesystem::u8path(module_config_path("update.json")));
 }
 
-// The fonts of the Synthwave, Cyberpunk and Glitch styles: the same Google Fonts
-// that multi-chat and music-now-playing load, bundled so they work offline.
+// The fonts of the Synthwave, Cyberpunk, Glitch and GTA 6 styles: the same Google
+// Fonts that multi-chat and music-now-playing load, bundled so they work offline.
 void load_style_fonts()
 {
 	for (const char *file :
-	     {"fonts/VT323-Regular.ttf", "fonts/MrDafoe-Regular.ttf", "fonts/Orbitron-VariableFont_wght.ttf"}) {
+	     {"fonts/VT323-Regular.ttf", "fonts/MrDafoe-Regular.ttf", "fonts/Orbitron-VariableFont_wght.ttf",
+	      "fonts/Anton-Regular.ttf"}) {
 		char *path = obs_module_file(file);
 		if (path == nullptr) {
 			obs_log(LOG_WARNING, "font not found: %s", file);

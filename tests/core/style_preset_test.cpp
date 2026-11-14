@@ -25,6 +25,8 @@ TEST_CASE(shared_style_ids_match_the_other_plugins)
 	CHECK(style_preset_id(StylePreset::Cyber) == std::string_view("cyber"));
 	CHECK(style_preset_id(StylePreset::Retro) == std::string_view("retro"));
 	CHECK(style_preset_id(StylePreset::Glitch) == std::string_view("glitch"));
+	CHECK(style_preset_id(StylePreset::Gta6) == std::string_view("gta6"));
+	CHECK(style_preset_id(StylePreset::Gta6Disc) == std::string_view("gta6disc"));
 }
 
 TEST_CASE(style_ids_round_trip)
@@ -47,6 +49,8 @@ TEST_CASE(original_presets_have_no_card)
 	CHECK(!style_has_card(StylePreset::Neon));
 	CHECK(style_has_card(StylePreset::Glass));
 	CHECK(style_has_card(StylePreset::Glitch));
+	CHECK(style_has_card(StylePreset::Gta6));
+	CHECK(style_has_card(StylePreset::Gta6Disc));
 }
 
 // Like the other plugins: the glass styles take the user's colors, the
@@ -65,6 +69,8 @@ TEST_CASE(only_untinted_styles_use_the_user_colors)
 	CHECK(!style_uses_custom_colors(StylePreset::Cyber));
 	CHECK(!style_uses_custom_colors(StylePreset::Retro));
 	CHECK(!style_uses_custom_colors(StylePreset::Glitch));
+	CHECK(!style_uses_custom_colors(StylePreset::Gta6));
+	CHECK(!style_uses_custom_colors(StylePreset::Gta6Disc));
 }
 
 TEST_CASE(only_glitch_animates)
