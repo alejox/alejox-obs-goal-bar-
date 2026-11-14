@@ -6,7 +6,9 @@
 
 namespace goalbar {
 
-enum class Metric { Likes, Subscribers, Followers, Viewers };
+// Bits and Comments are counted from the live chat while the source runs;
+// the others are read from the platform as a total.
+enum class Metric { Likes, Subscribers, Followers, Viewers, Bits, Comments };
 
 enum class Platform { Manual, YouTube, Twitch, Kick };
 
@@ -17,7 +19,12 @@ std::optional<Metric> metric_from_id(std::string_view id);
 std::string_view platform_id(Platform platform);
 std::optional<Platform> platform_from_id(std::string_view id);
 
-// Which metrics each platform can read. Manual takes any value but viewers.
+// Whether the metric is counted from chat events (bits, comments) rather than
+// read as a total: the goal then grows by what the chat adds.
+bool metric_is_counted(Metric metric);
+
+// Which metrics each platform can read. Manual takes any value but viewers and
+// the counted metrics.
 bool platform_reads(Platform platform, Metric metric);
 
 // `metric` when `platform` reads it, otherwise the platform's first metric

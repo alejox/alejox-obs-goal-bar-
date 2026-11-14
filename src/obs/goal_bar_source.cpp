@@ -1,5 +1,6 @@
 #include "obs/goal_bar_source.hpp"
 
+#include "core/chat_events.hpp"
 #include "core/goal_reading.hpp"
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
@@ -52,6 +53,8 @@ constexpr const char *kTwitchStatusKey = "twitch_account_status";
 constexpr const char *kTwitchConnectKey = "twitch_connect";
 constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
 constexpr const char *kKickChannelKey = "kick_channel";
+constexpr const char *kChatMinCharsKey = "chat_min_chars";
+constexpr const char *kChatNoticeKey = "chat_notice";
 // Bumped on every goal change made by the plugin itself (provider reading,
 // auto next goal, reset). A settings object with an older revision is a stale
 // snapshot, e.g. the one the properties dialog restores on Cancel.
@@ -64,6 +67,8 @@ constexpr long long kDefaultHeight = 120;
 constexpr long long kDefaultAccent = 0xFF6E3DFF; // OBS colors are 0xAABBGGRR
 constexpr long long kDefaultTextColor = 0xFFFFFFFF;
 constexpr long long kDefaultOpacity = 85; // as in multi-chat and music-now-playing
+constexpr long long kDefaultChatMinChars = 5;
+constexpr long long kMaxChatMinChars = 500;
 
 constexpr const char *kIntGoalKeys[] = {settings_key::kStart, settings_key::kTarget, settings_key::kCurrent,
 					settings_key::kStep};
@@ -73,10 +78,12 @@ struct ProviderKey {
 	Platform platform = Platform::Manual;
 	Metric metric = Metric::Likes;
 	std::string channel_url; // canonical YouTube URL or Kick slug, empty when invalid
+	int min_chars = 0;       // comments only: shortest message that counts
 
 	bool operator==(const ProviderKey &other) const
 	{
-		return platform == other.platform && metric == other.metric && channel_url == other.channel_url;
+		return platform == other.platform && metric == other.metric && channel_url == other.channel_url &&
+		       min_chars == other.min_chars;
 	}
 };
 
@@ -107,6 +114,7 @@ struct GoalBarSource {
 	std::optional<uint64_t> applied_value;
 	ProviderState applied_state = ProviderState::Idle;
 	bool needs_baseline = true; // the next value is the provider's first one
+	CountCursor count_cursor;   // counted metrics: what the chat total already added
 
 	// Hand-off to the graphics thread.
 	std::mutex image_mutex;
@@ -283,6 +291,9 @@ ProviderKey read_provider_key(obs_data_t *settings)
 		key.channel_url = normalize_youtube_channel(obs_data_get_string(settings, kChannelKey)).value_or("");
 	if (key.platform == Platform::Kick)
 		key.channel_url = normalize_kick_slug(obs_data_get_string(settings, kKickChannelKey)).value_or("");
+	if (key.metric == Metric::Comments)
+		key.min_chars = static_cast<int>(
+			std::clamp(obs_data_get_int(settings, kChatMinCharsKey), 1LL, kMaxChatMinChars));
 	return key;
 }
 
@@ -312,12 +323,17 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 		if (self.provider_key == key)
 			return std::nullopt;
 		std::unique_ptr<MetricProvider> next;
-		if (key.platform == Platform::YouTube && !key.channel_url.empty())
+		const bool has_channel = key.platform == Platform::Twitch || !key.channel_url.empty();
+		if (metric_is_counted(key.metric)) {
+			if (has_channel && key.platform != Platform::Manual)
+				next = make_chat_provider(key.platform, key.metric, key.min_chars, key.channel_url);
+		} else if (key.platform == Platform::YouTube && has_channel) {
 			next = make_youtube_provider(key.channel_url, key.metric);
-		if (key.platform == Platform::Twitch)
+		} else if (key.platform == Platform::Twitch) {
 			next = make_twitch_provider(key.metric);
-		if (key.platform == Platform::Kick && !key.channel_url.empty())
+		} else if (key.platform == Platform::Kick && has_channel) {
 			next = make_kick_provider(key.channel_url, key.metric);
+		}
 		if (key.platform == Platform::YouTube || key.platform == Platform::Kick)
 			status = next ? obs_module_text("GoalBar.Status.Connecting")
 				      : obs_module_text("GoalBar.Status.NoChannel");
@@ -329,16 +345,41 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 		self.applied_value.reset();
 		self.applied_state = ProviderState::Idle;
 		self.needs_baseline = true;
+		self.count_cursor.reset();
 	}
 	if (old || key.platform != Platform::Manual)
 		obs_log(LOG_INFO, "metric provider: %s", describe_provider(key).c_str());
 	return status;
 }
 
+// Switching a source to bits or comments (another metric or platform) starts
+// the count at zero instead of carrying over the previous metric's value. A
+// saved source loading for the first time keeps its count.
+void start_counting_from_zero(GoalBarSource &self, obs_data_t *settings, const ProviderKey &key)
+{
+	if (!metric_is_counted(key.metric))
+		return;
+	{
+		std::lock_guard lock(self.provider_mutex);
+		if (self.provider_key.metric == key.metric && self.provider_key.platform == key.platform)
+			return;
+	}
+	{
+		std::lock_guard lock(self.update_mutex);
+		if (!self.has_goal)
+			return;
+	}
+	obs_data_set_int(settings, settings_key::kCurrent, 0);
+	obs_data_set_int(settings, settings_key::kStart, 0);
+	obs_data_set_bool(settings, settings_key::kReachedFired, false);
+}
+
 void goal_bar_update(void *data, obs_data_t *settings)
 {
 	auto *self = static_cast<GoalBarSource *>(data);
-	const std::optional<std::string> provider_status = replace_provider(*self, read_provider_key(settings));
+	const ProviderKey key = read_provider_key(settings);
+	start_counting_from_zero(*self, settings, key);
+	const std::optional<std::string> provider_status = replace_provider(*self, key);
 
 	std::lock_guard update_lock(self->update_mutex);
 	GoalSettings next = decode_goal_settings(read_goal_settings(settings));
@@ -405,11 +446,33 @@ void apply_reading(GoalBarSource &self, const MetricReading &reading, ReadingKin
 	repaint_locked(self);
 }
 
+// Counted metrics (bits, comments): the goal grows by what the chat added
+// since the last reading, on top of the value it already had.
+void apply_count(GoalBarSource &self, const MetricReading &reading, uint64_t added)
+{
+	std::lock_guard update_lock(self.update_mutex);
+	self.status = status_text(reading);
+	if (added > 0) {
+		Goal &goal = self.goal.goal;
+		const uint64_t auto_next_step = self.auto_next ? self.goal.step : 0;
+		const uint64_t value = goal.current > UINT64_MAX - added ? UINT64_MAX : goal.current + added;
+		const ReadingOutcome outcome = apply_metric_value(goal, value, ReadingKind::Update, auto_next_step);
+		log_if_reached(outcome.event, goal);
+		persist_goal(self);
+		self.fill.retarget(goal.progress());
+		if (outcome.event == GoalEvent::GoalReached)
+			self.actions->trigger(false);
+	}
+	repaint_locked(self);
+}
+
 // Cheap check for a new provider reading.
 void poll_provider(GoalBarSource &self)
 {
 	MetricReading reading;
 	ReadingKind kind = ReadingKind::Update;
+	bool counted = false;
+	uint64_t added = 0;
 	{
 		std::lock_guard lock(self.provider_mutex);
 		if (!self.provider)
@@ -419,12 +482,18 @@ void poll_provider(GoalBarSource &self)
 			return;
 		self.applied_value = reading.value;
 		self.applied_state = reading.state;
+		counted = metric_is_counted(self.provider->metric());
+		if (counted && reading.value)
+			added = self.count_cursor.take(*reading.value);
 		if (reading.value && self.needs_baseline) {
 			kind = ReadingKind::Baseline;
 			self.needs_baseline = false;
 		}
 	}
-	apply_reading(self, reading, kind);
+	if (counted)
+		apply_count(self, reading, added);
+	else
+		apply_reading(self, reading, kind);
 }
 
 // Moves to the next goal after a celebration. Returns false when there is
@@ -655,6 +724,7 @@ void goal_bar_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, kAccentKey, kDefaultAccent);
 	obs_data_set_default_int(settings, kTextColorKey, kDefaultTextColor);
 	obs_data_set_default_int(settings, kOpacityKey, kDefaultOpacity);
+	obs_data_set_default_int(settings, kChatMinCharsKey, kDefaultChatMinChars);
 	obs_data_set_default_int(settings, kWidthKey, kDefaultWidth);
 	obs_data_set_default_int(settings, kHeightKey, kDefaultHeight);
 	set_action_defaults(settings);
@@ -672,7 +742,9 @@ void fill_metric_list(obs_property_t *list, Platform platform)
 	const std::pair<Metric, const char *> metrics[] = {{Metric::Likes, "Metric.Likes"},
 							   {Metric::Viewers, "Metric.Viewers"},
 							   {Metric::Subscribers, "Metric.Subscribers"},
-							   {Metric::Followers, "Metric.Followers"}};
+							   {Metric::Followers, "Metric.Followers"},
+							   {Metric::Bits, "Metric.Bits"},
+							   {Metric::Comments, "Metric.Comments"}};
 	for (const auto &[metric, label] : metrics) {
 		if (platform_reads(platform, metric))
 			obs_property_list_add_string(list, obs_module_text(label),
@@ -722,9 +794,16 @@ bool twitch_disconnect_clicked(obs_properties_t *props, obs_property_t *, void *
 
 bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *settings)
 {
-	const bool subs = metric_from_id(obs_data_get_string(settings, settings_key::kMetric)) == Metric::Subscribers;
+	const Platform platform = selected_platform(settings);
+	const std::optional<Metric> metric = metric_from_id(obs_data_get_string(settings, settings_key::kMetric));
+	const bool readable = metric && platform_reads(platform, *metric);
 	obs_property_set_visible(obs_properties_get(props, kSubsNoticeKey),
-				 subs && selected_platform(settings) == Platform::YouTube);
+				 readable && *metric == Metric::Subscribers && platform == Platform::YouTube);
+	obs_property_set_visible(obs_properties_get(props, kChatNoticeKey), readable && metric_is_counted(*metric));
+	obs_property_set_visible(obs_properties_get(props, kChatMinCharsKey), readable && *metric == Metric::Comments);
+	// Typed in manual mode; adjustable for counted metrics (the chat adds to it).
+	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent),
+				 platform == Platform::Manual || (readable && metric_is_counted(*metric)));
 	return true;
 }
 
@@ -732,7 +811,6 @@ bool platform_changed(obs_properties_t *props, obs_property_t *property, obs_dat
 {
 	const Platform platform = selected_platform(settings);
 	obs_property_set_visible(obs_properties_get(props, kChannelKey), platform == Platform::YouTube);
-	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent), platform == Platform::Manual);
 	obs_property_set_visible(obs_properties_get(props, kKickChannelKey), platform == Platform::Kick);
 	update_twitch_account(props, platform == Platform::Twitch);
 	fill_metric_list(obs_properties_get(props, settings_key::kMetric), selected_platform(settings));
@@ -838,6 +916,10 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_properties_add_text(props, kTitleKey, obs_module_text("GoalBar.Title"), OBS_TEXT_DEFAULT);
 	add_metric_list(props);
 	obs_properties_add_text(props, kSubsNoticeKey, obs_module_text("GoalBar.SubsNotice"), OBS_TEXT_INFO);
+	obs_property_t *min_chars = obs_properties_add_int(props, kChatMinCharsKey, obs_module_text("GoalBar.ChatMinChars"),
+							    1, int(kMaxChatMinChars), 1);
+	obs_property_set_long_description(min_chars, obs_module_text("GoalBar.ChatMinCharsHelp"));
+	obs_properties_add_text(props, kChatNoticeKey, obs_module_text("GoalBar.ChatNotice"), OBS_TEXT_INFO);
 	obs_properties_add_int(props, settings_key::kCurrent, obs_module_text("GoalBar.Current"), 0, INT_MAX, 1);
 	obs_properties_add_int(props, settings_key::kTarget, obs_module_text("GoalBar.Target"), 1, INT_MAX, 1);
 	add_style_list(props);

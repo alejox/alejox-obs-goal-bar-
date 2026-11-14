@@ -31,6 +31,7 @@ A native OBS source (no browser source, no web page, no external app). YouTube a
 | ▶️ | **YouTube, public mode** | Reads the live stream's likes and subscribers from the channel's public page (`@handle`), no sign-in |
 | 🟣 | **Twitch** | Followers and subscribers through the official API. Connect your account with a code on twitch.tv/activate |
 | 🟢 | **Kick** | Followers and viewers of any channel, no Kick account or app needed (undocumented public endpoint, see below) |
+| 💬 | **Chat goals** | **Comments** (YouTube, Twitch, Kick) with a minimum length you choose, and **Bits** (Twitch), counted from the live chat while OBS is open |
 | ✍️ | **Manual mode** | Type the current value yourself; always available |
 | 🎉 | **Celebration** | When the goal is reached: a glow and confetti over the bar |
 | 🎬 | **Show a source** | Shows a scene source (image, text, audio or video). Audio and video play from the start and hide when they end |
@@ -90,6 +91,15 @@ Twitch login on Linux needs `libsecret` and a running Secret Service (GNOME Keyr
 
 Followers work with any account. Subscribers need a Twitch Affiliate or Partner channel; otherwise the bar says so.
 
+### 💬 Comments and bits
+
+Pick the metric **Comments** (YouTube, Twitch or Kick) or **Bits** (Twitch). The bar counts them from the live chat, the same way multi-chat reads it:
+
+- **Comments**: every message with at least **Minimum characters per comment** (5 by default; leading and trailing spaces don't count, each emote or emoji counts as one character).
+- **Bits**: the bits of every cheer in the chat. No extra Twitch permission is needed: the chat is read anonymously, so you don't have to reconnect your account.
+- Only what happens **while OBS is open** is counted. Switching a source to comments or bits starts at 0; change **Current value** to start from another number.
+- Twitch reads the chat of the connected account; YouTube the live stream of the `@handle` (it waits while the channel is offline); Kick the chat of the channel you typed.
+
 ### 🟢 Kick
 
 Pick **Kick** and type the channel name (or paste its kick.com URL). No Kick account, app or credentials are needed.
@@ -140,7 +150,7 @@ Run the `xattr -dr com.apple.quarantine …` command from the install steps. The
 |------|---------------|
 | Twitch login | The refresh token lives in the system keychain (macOS Keychain, Windows Credential Manager or the Linux Secret Service); the access token only in memory |
 | YouTube | The public live page is read; no sign-in, no keys |
-| Network | The plugin only talks to youtube.com, twitch.tv (id.twitch.tv and api.twitch.tv), kick.com and github.com (to check for and download updates). It sends no data anywhere else, and there's no telemetry |
+| Network | The plugin only talks to youtube.com, twitch.tv (id.twitch.tv, api.twitch.tv and, for chat goals, irc-ws.chat.twitch.tv), kick.com (plus Kick's chat service on pusher.com) and github.com (to check for and download updates). It sends no data anywhere else, and there's no telemetry |
 
 ## 🧭 Status
 
