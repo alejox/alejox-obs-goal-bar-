@@ -1,4 +1,4 @@
-// Network on Windows with WinHTTP (Windows 8+).
+// Network on Windows with WinHTTP (HTTPS and WebSockets, Windows 8+).
 
 #include "net/net.hpp"
 
@@ -7,6 +7,9 @@
 #endif
 #include <windows.h>
 #include <winhttp.h>
+
+#include <atomic>
+#include <mutex>
 
 namespace goalbar::net {
 
@@ -43,6 +46,12 @@ struct Handle {
 			WinHttpCloseHandle(h);
 	}
 	operator HINTERNET() const { return h; }
+	HINTERNET release()
+	{
+		HINTERNET out = h;
+		h = nullptr;
+		return out;
+	}
 };
 
 // One session for the whole plugin (WinHTTP sessions are thread-safe).
@@ -75,8 +84,13 @@ struct Url {
 	bool secure = false;
 };
 
-bool parse_url(const std::string &url, Url &out)
+bool parse_url(std::string url, Url &out)
 {
+	// WinHttpCrackUrl knows neither ws:// nor wss://.
+	if (url.rfind("wss://", 0) == 0)
+		url = "https://" + url.substr(6);
+	else if (url.rfind("ws://", 0) == 0)
+		url = "http://" + url.substr(5);
 	const std::wstring w = widen(url);
 	URL_COMPONENTS uc = {};
 	uc.dwStructSize = sizeof(uc);
@@ -143,9 +157,9 @@ Response cancelled_response()
 	return res;
 }
 
-// `body` is null for GET; otherwise it is sent as a form-encoded POST body.
+// `body` is null for GET; otherwise it is sent as a POST body of `content_type`.
 Response perform(const wchar_t *method, const std::string &url, Headers headers, const std::string *body,
-		 int timeout_ms, CancelToken *cancel)
+		 const char *content_type, int timeout_ms, CancelToken *cancel)
 {
 	Response res;
 	Url u;
@@ -173,7 +187,7 @@ Response perform(const wchar_t *method, const std::string &url, Headers headers,
 		return cancelled_response();
 	WinHttpSetTimeouts(request, timeout_ms, timeout_ms, timeout_ms, timeout_ms);
 	if (body)
-		headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
+		headers.emplace_back("Content-Type", content_type);
 	const std::wstring block = header_block(headers);
 	LPVOID data = body ? const_cast<char *>(body->data()) : WINHTTP_NO_REQUEST_DATA;
 	const DWORD length = body ? (DWORD)body->size() : 0;
@@ -210,17 +224,125 @@ Response perform(const wchar_t *method, const std::string &url, Headers headers,
 	return res;
 }
 
+class WinWebSocket : public WebSocket {
+public:
+	WinWebSocket(HINTERNET connection, HINTERNET ws) : connection_(connection), ws_(ws) {}
+	~WinWebSocket() override
+	{
+		close();
+		WinHttpCloseHandle(connection_);
+	}
+
+	Result receive(std::string &message) override
+	{
+		message.clear();
+		char buffer[16384];
+		for (;;) {
+			HINTERNET ws = ws_.load();
+			if (!ws)
+				return Result::Closed;
+			DWORD read = 0;
+			WINHTTP_WEB_SOCKET_BUFFER_TYPE type;
+			if (WinHttpWebSocketReceive(ws, buffer, sizeof(buffer), &read, &type) != NO_ERROR)
+				return Result::Closed;
+			if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
+				return Result::Closed;
+			message.append(buffer, read);
+			if (message.size() > kMaxBody)
+				return Result::Closed;
+			if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE ||
+			    type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE)
+				return Result::Message;
+			// *_FRAGMENT_BUFFER_TYPE: keep reading the rest of the message.
+		}
+	}
+
+	bool send(const std::string &text) override
+	{
+		std::lock_guard<std::mutex> lock(send_mutex_);
+		HINTERNET ws = ws_.load();
+		return ws && WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, (PVOID)text.data(),
+						  (DWORD)text.size()) == NO_ERROR;
+	}
+
+	void close() override
+	{
+		// Closing the handle cancels a WinHttpWebSocketReceive in progress.
+		if (HINTERNET ws = ws_.exchange(nullptr))
+			WinHttpCloseHandle(ws);
+	}
+
+private:
+	HINTERNET connection_;
+	std::atomic<HINTERNET> ws_;
+	std::mutex send_mutex_;
+};
+
 } // namespace
 
 Response get(const std::string &url, const Headers &headers, int timeout_ms, CancelToken *cancel)
 {
-	return perform(L"GET", url, headers, nullptr, timeout_ms, cancel);
+	return perform(L"GET", url, headers, nullptr, nullptr, timeout_ms, cancel);
 }
 
 Response post_form(const std::string &url, const std::string &body, const Headers &headers, int timeout_ms,
 		   CancelToken *cancel)
 {
-	return perform(L"POST", url, headers, &body, timeout_ms, cancel);
+	return perform(L"POST", url, headers, &body, "application/x-www-form-urlencoded", timeout_ms, cancel);
+}
+
+Response post(const std::string &url, const std::string &body, const std::string &content_type, const Headers &headers,
+	      int timeout_ms, CancelToken *cancel)
+{
+	return perform(L"POST", url, headers, &body, content_type.c_str(), timeout_ms, cancel);
+}
+
+std::shared_ptr<WebSocket> connect_websocket(const std::string &url, const Headers &headers, std::string &error)
+{
+	Url u;
+	if (!session()) {
+		error = last_error("WinHttpOpen");
+		return nullptr;
+	}
+	if (!parse_url(url, u)) {
+		error = "invalid URL: " + url;
+		return nullptr;
+	}
+	Handle connection(WinHttpConnect(session(), u.host.c_str(), u.port, 0));
+	if (!connection) {
+		error = last_error("WinHttpConnect");
+		return nullptr;
+	}
+	Handle request(WinHttpOpenRequest(connection, L"GET", u.path.c_str(), nullptr, WINHTTP_NO_REFERER,
+					  WINHTTP_DEFAULT_ACCEPT_TYPES, u.secure ? WINHTTP_FLAG_SECURE : 0));
+	if (!request) {
+		error = last_error("WinHttpOpenRequest");
+		return nullptr;
+	}
+	// No receive timeout on the socket: a quiet chat can go minutes without a message.
+	WinHttpSetTimeouts(request, 15000, 15000, 15000, 0);
+	if (!WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0)) {
+		error = last_error("WebSocket upgrade");
+		return nullptr;
+	}
+	const std::wstring block = header_block(headers);
+	if (!WinHttpSendRequest(request, block.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : block.c_str(),
+				block.empty() ? 0 : (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+	    !WinHttpReceiveResponse(request, nullptr)) {
+		error = last_error("no response");
+		return nullptr;
+	}
+	const int status = status_code(request);
+	if (status != 101) {
+		error = "the server refused the WebSocket (HTTP " + std::to_string(status) + ")";
+		return nullptr;
+	}
+	HINTERNET ws = WinHttpWebSocketCompleteUpgrade(request, 0);
+	if (!ws) {
+		error = last_error("WebSocket");
+		return nullptr;
+	}
+	return std::make_shared<WinWebSocket>(connection.release(), ws);
 }
 
 } // namespace goalbar::net

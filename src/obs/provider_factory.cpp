@@ -2,6 +2,8 @@
 
 #include "net/net.hpp"
 #include "obs/twitch_services.hpp"
+#include "providers/chat_count_provider.hpp"
+#include "providers/chat_sessions.hpp"
 #include "providers/kick_provider.hpp"
 #include "providers/twitch_provider.hpp"
 #include "providers/youtube_public_provider.hpp"
@@ -9,6 +11,8 @@
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <memory>
+#include <optional>
 #include <utility>
 
 namespace goalbar::obs {
@@ -40,6 +44,54 @@ void log_provider(const std::string &message)
 	obs_log(LOG_INFO, "%s", message.c_str());
 }
 
+HttpResult to_http_result(net::Response response)
+{
+	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
+}
+
+class NetChatSocket final : public ChatSocket {
+public:
+	explicit NetChatSocket(std::shared_ptr<net::WebSocket> socket) : socket_(std::move(socket)) {}
+	bool receive(std::string &message) override
+	{
+		return socket_->receive(message) == net::WebSocket::Result::Message;
+	}
+	bool send(const std::string &text) override { return socket_->send(text); }
+	void close() override { socket_->close(); }
+
+private:
+	std::shared_ptr<net::WebSocket> socket_;
+};
+
+ChatNet system_chat_net()
+{
+	ChatNet out;
+	out.get = [](const std::string &url, const HttpHeaders &headers, CancelToken &cancel) {
+		return to_http_result(net::get(url, headers, 10000, &cancel));
+	};
+	out.post_json = [](const std::string &url, const std::string &json, const HttpHeaders &headers,
+			   CancelToken &cancel) {
+		return to_http_result(net::post(url, json, "application/json", headers, 10000, &cancel));
+	};
+	out.connect = [](const std::string &url, const HttpHeaders &headers,
+			 std::string &error) -> std::shared_ptr<ChatSocket> {
+		std::shared_ptr<net::WebSocket> socket = net::connect_websocket(url, headers, error);
+		if (!socket)
+			return nullptr;
+		return std::make_shared<NetChatSocket>(std::move(socket));
+	};
+	return out;
+}
+
+// The connected account's login, whose chat a Twitch chat goal reads.
+std::optional<std::string> twitch_login(CancelToken &cancel)
+{
+	const HelixUserResult result = twitch_account()->current_user(cancel);
+	if (result.outcome != HelixOutcome::Ok || !result.user)
+		return std::nullopt;
+	return result.user->login;
+}
+
 } // namespace
 
 std::unique_ptr<MetricProvider> make_youtube_provider(const std::string &channel_url, Metric metric)
@@ -55,6 +107,26 @@ std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric)
 std::unique_ptr<MetricProvider> make_kick_provider(const std::string &slug, Metric metric)
 {
 	return std::make_unique<KickProvider>(fetch_kick_channel, slug, metric, log_provider);
+}
+
+std::unique_ptr<MetricProvider> make_chat_provider(Platform platform, Metric metric, int min_chars,
+						   const std::string &channel)
+{
+	ChatSession session;
+	switch (platform) {
+	case Platform::Twitch:
+		session = twitch_chat_session(system_chat_net(), twitch_login);
+		break;
+	case Platform::Kick:
+		session = kick_chat_session(system_chat_net(), channel);
+		break;
+	case Platform::YouTube:
+		session = youtube_chat_session(system_chat_net(), channel);
+		break;
+	default:
+		return nullptr;
+	}
+	return std::make_unique<ChatCountProvider>(platform, metric, min_chars, std::move(session), log_provider);
 }
 
 } // namespace goalbar::obs

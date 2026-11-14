@@ -31,6 +31,7 @@ Una fuente nativa de OBS (sin fuente de navegador, sin página web, sin app apar
 | ▶️ | **YouTube, modo público** | Lee los me gusta y los suscriptores del directo desde la página pública del canal (`@usuario`), sin iniciar sesión |
 | 🟣 | **Twitch** | Seguidores y suscriptores con la API oficial. Conectas tu cuenta con un código en twitch.tv/activate |
 | 🟢 | **Kick** | Seguidores y espectadores de cualquier canal, sin cuenta ni app de Kick (endpoint público no documentado, ver abajo) |
+| 💬 | **Metas del chat** | **Comentarios** (YouTube, Twitch, Kick) con un mínimo de caracteres que eliges, y **Bits** (Twitch), contados desde el chat en vivo mientras OBS está abierto |
 | ✍️ | **Modo manual** | Escribes el valor actual a mano; siempre disponible |
 | 🎉 | **Celebración** | Al cumplir la meta: brillo y confeti sobre la barra |
 | 🎬 | **Mostrar una fuente** | Muestra una fuente de la escena (imagen, texto, audio o video). Audio y video se reproducen desde el inicio y se ocultan al terminar |
@@ -90,6 +91,15 @@ En Linux, el inicio de sesión de Twitch necesita `libsecret` y un Secret Servic
 
 Los seguidores funcionan con cualquier cuenta. Los suscriptores necesitan un canal Afiliado o Partner de Twitch; si no, la barra lo indica.
 
+### 💬 Comentarios y bits
+
+Elige la métrica **Comentarios** (YouTube, Twitch o Kick) o **Bits** (Twitch). La barra los cuenta desde el chat en vivo, igual que lo lee multi-chat:
+
+- **Comentarios**: cada mensaje con al menos **Mínimo de caracteres por comentario** (5 por defecto; no cuentan los espacios del principio y del final, y cada emote o emoji cuenta como un carácter).
+- **Bits**: los bits de cada cheer del chat. No hace falta ningún permiso extra de Twitch: el chat se lee de forma anónima, así que no tienes que reconectar la cuenta.
+- Solo se cuenta lo que pasa **mientras OBS está abierto**. Al cambiar una fuente a comentarios o bits empieza en 0; cambia **Valor actual** para empezar desde otro número.
+- Twitch lee el chat de la cuenta conectada; YouTube el directo del `@usuario` (espera mientras el canal no está en vivo); Kick el chat del canal que escribiste.
+
 ### 🟢 Kick
 
 Elige **Kick** y escribe el nombre del canal (o pega su URL de kick.com). No necesitas cuenta, app ni credenciales de Kick.
@@ -140,7 +150,7 @@ Ejecuta el comando `xattr -dr com.apple.quarantine …` de los pasos de instalac
 |------|-------------|
 | Sesión de Twitch | El token de renovación vive en el llavero del sistema (Llavero de macOS, Administrador de credenciales de Windows o el Secret Service de Linux); el token de acceso, solo en memoria |
 | YouTube | Se lee la página pública del directo; no hay inicio de sesión ni claves |
-| Red | El plugin solo habla con youtube.com, twitch.tv (id.twitch.tv y api.twitch.tv), kick.com y github.com (para buscar y descargar actualizaciones). No envía datos a ningún otro sitio y no tiene telemetría |
+| Red | El plugin solo habla con youtube.com, twitch.tv (id.twitch.tv, api.twitch.tv y, para las metas del chat, irc-ws.chat.twitch.tv), kick.com (y el servicio de chat de Kick en pusher.com) y github.com (para buscar y descargar actualizaciones). No envía datos a ningún otro sitio y no tiene telemetría |
 
 ## 🧭 Estado
 

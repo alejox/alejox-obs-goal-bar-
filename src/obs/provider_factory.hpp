@@ -22,4 +22,11 @@ std::unique_ptr<MetricProvider> make_twitch_provider(Metric metric);
 // once.
 std::unique_ptr<MetricProvider> make_kick_provider(const std::string &slug, Metric metric);
 
+// A provider that counts bits (Twitch) or comments (Twitch, YouTube, Kick)
+// from the live chat while it runs, starting at zero. `channel` is the
+// canonical YouTube URL or the Kick slug; Twitch reads the connected
+// account's own chat. A comment needs at least `min_chars` characters.
+std::unique_ptr<MetricProvider> make_chat_provider(Platform platform, Metric metric, int min_chars,
+						   const std::string &channel);
+
 } // namespace goalbar::obs

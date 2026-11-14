@@ -63,3 +63,31 @@ TEST_CASE(unreadable_metrics_fall_back_to_the_platform_default)
 	CHECK(readable_metric(Platform::Manual, Metric::Viewers) == Metric::Likes);
 	CHECK(readable_metric(Platform::Manual, Metric::Followers) == Metric::Followers);
 }
+
+// Bits and comments are counted from the live chat.
+TEST_CASE(chat_metrics_have_stable_ids)
+{
+	CHECK_EQ(std::string(metric_id(Metric::Bits)), std::string("bits"));
+	CHECK_EQ(std::string(metric_id(Metric::Comments)), std::string("comments"));
+	CHECK(metric_from_id("bits") == Metric::Bits);
+	CHECK(metric_from_id("comments") == Metric::Comments);
+	CHECK(metric_is_counted(Metric::Bits));
+	CHECK(metric_is_counted(Metric::Comments));
+	CHECK(!metric_is_counted(Metric::Followers));
+	CHECK(!metric_is_counted(Metric::Likes));
+}
+
+TEST_CASE(chat_metrics_by_platform)
+{
+	CHECK(platform_reads(Platform::Twitch, Metric::Bits));
+	CHECK(platform_reads(Platform::Twitch, Metric::Comments));
+	CHECK(platform_reads(Platform::YouTube, Metric::Comments));
+	CHECK(platform_reads(Platform::Kick, Metric::Comments));
+	CHECK(!platform_reads(Platform::YouTube, Metric::Bits));
+	CHECK(!platform_reads(Platform::Kick, Metric::Bits));
+	// Manual mode types the value: counting from a chat makes no sense there.
+	CHECK(!platform_reads(Platform::Manual, Metric::Bits));
+	CHECK(!platform_reads(Platform::Manual, Metric::Comments));
+	CHECK(readable_metric(Platform::Kick, Metric::Bits) == Metric::Followers);
+	CHECK(readable_metric(Platform::Manual, Metric::Comments) == Metric::Likes);
+}
