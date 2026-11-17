@@ -238,7 +238,7 @@ ctest --test-dir build_tests --output-on-failure
 
 ## 🤖 Cómo está hecho este plugin
 
-AC Goal Bar se desarrolla con la ayuda de un asistente de programación con IA (Claude): gran parte del código se escribió con él. Alejandro (Alejoxgaming) diseña las funciones, prueba cada versión en sus propios directos en Windows, macOS y Linux, decide qué se publica y mantiene el proyecto. El historial de commits muestra qué cambios se hicieron con ayuda de IA.
+AC Goal Bar se desarrolla con la ayuda de un asistente de programación con IA (Anthropic Claude, mediante Claude Code), dirigido por el mantenedor: gran parte del código se escribió con él. La IA se usó para escribir y modificar el código C++ del plugin y sus pruebas, los workflows de compilación y publicación, y la documentación, incluido este README. Alejandro (Alejoxgaming) diseña las funciones, revisa los cambios, prueba cada versión en OBS en sus propios directos en Windows, macOS y Linux, decide qué se publica y mantiene el proyecto. El historial de commits muestra qué cambios se hicieron con ayuda de IA.
 
 Si encuentras un fallo, [abre un issue](../../issues): cada reporte lo lee y lo responde una persona.
 
@@ -246,4 +246,4 @@ Si encuentras un fallo, [abre un issue](../../issues): cada reporte lo lee y lo 
 
 GPL-2.0 o posterior, como todo plugin que enlaza con libobs: mira [LICENSE](LICENSE).
 
-AC Goal Bar es un proyecto independiente, sin relación con OBS Project, YouTube, Twitch ni Kick, ni respaldado por ellos. Los estilos «GTA 6 (Vice City)» son un diseño original inspirado en los colores del juego; no usan ilustraciones ni logotipos de Rockstar Games, y AC Goal Bar no tiene relación con Rockstar Games ni con Take-Two Interactive. Todas las marcas pertenecen a sus dueños.
+AC Goal Bar es un plugin independiente, de terceros, para OBS Studio; no tiene relación con OBS Project, YouTube, Twitch ni Kick, ni está respaldado por ellos. Los estilos «GTA 6 (Vice City)» son un diseño original inspirado en los colores del juego; no usan ilustraciones ni logotipos de Rockstar Games, y AC Goal Bar no tiene relación con Rockstar Games ni con Take-Two Interactive. Todas las marcas pertenecen a sus dueños.

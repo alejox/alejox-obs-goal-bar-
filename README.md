@@ -238,7 +238,7 @@ ctest --test-dir build_tests --output-on-failure
 
 ## 🤖 How this plugin is made
 
-AC Goal Bar is developed with the help of an AI coding assistant (Claude): a large part of the code was written with it. Alejandro (Alejoxgaming) designs the features, tests every release on his own streams on Windows, macOS and Linux, decides what ships and maintains the project. The commit history shows which changes were AI-assisted.
+AC Goal Bar is developed with the help of an AI coding assistant (Anthropic Claude, via Claude Code), directed by the maintainer: a large part of the code was written with it. AI was used to write and modify the C++ plugin code and its tests, the build and release workflows, and the documentation, including this README. Alejandro (Alejoxgaming) designs the features, reviews the changes, tests every release in OBS on his own streams on Windows, macOS and Linux, decides what ships and maintains the project. The commit history shows which changes were AI-assisted.
 
 If you find a bug, please [open an issue](../../issues): every report is read and answered by a person.
 
@@ -246,4 +246,4 @@ If you find a bug, please [open an issue](../../issues): every report is read an
 
 GPL-2.0 or later, like every plugin that links against libobs — see [LICENSE](LICENSE).
 
-AC Goal Bar is an independent project, not affiliated with or endorsed by the OBS Project, YouTube, Twitch or Kick. The "GTA 6 (Vice City)" styles are an original look inspired by the game's colors; they use no Rockstar Games artwork or logos, and AC Goal Bar is not affiliated with Rockstar Games or Take-Two Interactive. All trademarks belong to their owners.
+AC Goal Bar is an independent, third-party plugin for OBS Studio; it is not affiliated with or endorsed by the OBS Project, YouTube, Twitch or Kick. The "GTA 6 (Vice City)" styles are an original look inspired by the game's colors; they use no Rockstar Games artwork or logos, and AC Goal Bar is not affiliated with Rockstar Games or Take-Two Interactive. All trademarks belong to their owners.
