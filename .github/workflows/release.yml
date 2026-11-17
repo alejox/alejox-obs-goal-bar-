@@ -73,5 +73,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" \
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "AC Goal Bar $TAG" \
             --notes-file ".github/release-notes/$TAG.md"
