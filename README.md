@@ -2,7 +2,7 @@
 
 # 🎯 AC Goal Bar
 
-**A native OBS progress bar that moves live toward your likes, subscribers or followers goal on YouTube, Twitch or Kick, and celebrates when you reach it.**
+**A progress bar for OBS Studio that moves live toward your goal on YouTube, Twitch or Kick (likes, subscribers, followers, viewers, comments or bits) and celebrates when you reach it.**
 
 [![Latest release](https://img.shields.io/github/v/release/alejox/alejox-obs-goal-bar-?label=release&color=ff3d6e)](../../releases/latest)
 ![macOS](https://img.shields.io/badge/macOS-13%2B%20Apple%20Silicon-000000?logo=apple&logoColor=white)
@@ -46,35 +46,53 @@ A native OBS source (no browser source, no web page, no external app). YouTube a
 
 ## 📦 Install
 
+### Requirements
+
+| System | Needs |
+|---|---|
+| **macOS** | macOS 13 or later on Apple Silicon (M1 or newer), OBS Studio 33 or later. Intel Macs are not supported |
+| **Windows** | Windows 10 or 11, 64-bit, OBS Studio 33 or later |
+| **Linux** | x86_64, Ubuntu 24.04 or later, with OBS Studio from the [official OBS PPA](https://launchpad.net/~obsproject/+archive/ubuntu/obs-studio) (the package is built against it). Twitch login also needs `libsecret` and a running Secret Service (GNOME Keyring or KWallet) |
+
 Download the package for your system from **[Releases](../../releases/latest)** and **quit OBS first** (OBS cannot replace a plugin it already loaded).
 
-| | macOS 13+ (Apple Silicon) | Windows x64 (OBS 33+) | Linux x86_64 |
-|---|---|---|---|
-| **File** | `obs-goal-bar-<version>-macos-arm64.zip` | `obs-goal-bar-<version>-windows-x64.zip` | `obs-goal-bar-<version>-linux-x86_64.tar.gz` |
-| **You get** | `obs-goal-bar.plugin` | the `obs-goal-bar` folder | the `obs-goal-bar` folder |
-| **Copy it to** | `~/Library/Application Support/obs-studio/plugins/` | `C:\ProgramData\obs-studio\plugins\` | `~/.config/obs-studio/plugins/` |
-| **Then** | Run the Terminal command below (once) | — | — |
+### macOS
 
-Each package also contains its steps as `INSTALL.txt`. Open OBS: **Help → Log Files → View Current Log** should show `[obs-goal-bar] loaded`.
+1. Download `obs-goal-bar-<version>-macos-arm64.zip` and unzip it: you get `obs-goal-bar.plugin`.
+2. In Finder, press <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>G</kbd>, paste `~/Library/Application Support/obs-studio/plugins/` and press Enter. Create the `plugins` folder if it doesn't exist.
+3. Copy `obs-goal-bar.plugin` into that folder (replace the old one when updating by hand).
+4. The bundle isn't signed with a paid Apple developer account, so clear the quarantine flag once in Terminal:
 
-**macOS:** in Finder, press <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>G</kbd> and paste the path; create the `plugins` folder if it doesn't exist. The bundle isn't signed with a paid Apple developer account, so clear the quarantine flag once:
+   ```bash
+   xattr -dr com.apple.quarantine ~/Library/Application\ Support/obs-studio/plugins/obs-goal-bar.plugin
+   ```
 
-```bash
-xattr -dr com.apple.quarantine ~/Library/Application\ Support/obs-studio/plugins/obs-goal-bar.plugin
-```
+5. Open OBS.
 
-**Windows:** the result must be `C:\ProgramData\obs-studio\plugins\obs-goal-bar\bin\64bit\obs-goal-bar.dll` (`ProgramData` is hidden: type the path in the Explorer address bar). The Twitch refresh token is kept in the Windows Credential Manager.
+### Windows
 
-**Linux:** built on Ubuntu 24.04 against the OBS from the [official PPA](https://launchpad.net/~obsproject/+archive/ubuntu/obs-studio).
+1. Download `obs-goal-bar-<version>-windows-x64.zip` and extract it: you get the `obs-goal-bar` folder.
+2. Copy that folder into `C:\ProgramData\obs-studio\plugins\`. `ProgramData` is hidden: type the path in the Explorer address bar, and create the `plugins` folder if it doesn't exist.
+3. Check that this file exists: `C:\ProgramData\obs-studio\plugins\obs-goal-bar\bin\64bit\obs-goal-bar.dll`.
+4. Open OBS.
 
-```bash
-mkdir -p ~/.config/obs-studio/plugins
-tar -xzf obs-goal-bar-<version>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plugins
-```
+### Linux
 
-Twitch login on Linux needs `libsecret` and a running Secret Service (GNOME Keyring or KWallet); without one, the token isn't saved (it's never kept in plain text).
+1. Download `obs-goal-bar-<version>-linux-x86_64.tar.gz`.
+2. Extract it into your OBS plugins folder:
 
-**Uninstall:** delete `obs-goal-bar.plugin` (macOS) or the `obs-goal-bar` folder (Windows, Linux) from the plugins folder above.
+   ```bash
+   mkdir -p ~/.config/obs-studio/plugins
+   tar -xzf obs-goal-bar-<version>-linux-x86_64.tar.gz -C ~/.config/obs-studio/plugins
+   ```
+
+3. Open OBS.
+
+### Check that it loaded
+
+In OBS, **Help → Log Files → View Current Log** should show `[obs-goal-bar] loaded (version …)`, and **Goal Bar** appears when you click **+** under Sources. The Windows and Linux packages also contain these steps as `INSTALL.txt`.
+
+**Uninstall:** quit OBS and delete `obs-goal-bar.plugin` (macOS) or the `obs-goal-bar` folder (Windows, Linux) from the plugins folder above.
 
 ## 🚀 Use it in 5 steps
 
@@ -112,7 +130,7 @@ Metrics: **Followers** (readable at any time) and **Viewers** (shown while the c
 ## 🔄 Updates
 
 - **Automatic.** When OBS starts, the plugin checks the latest release on GitHub, at most once a day. If there is a newer one, it shows a notice with the release notes and three choices: **Install on next restart**, **Later** or **Skip this version**.
-- **Manual.** Use **Tools → Goal Bar: Check for updates**.
+- **Manual.** Use **Tools → AC Goal Bar: Check for updates**.
 - **How it applies.** After **Install on next restart**, the package is downloaded from this repository's GitHub Releases and verified against the SHA-256 GitHub publishes. It is installed when you close OBS and is active the next time you open it. If any step fails, the previous version is put back.
 
 > [!NOTE]
@@ -144,17 +162,56 @@ Kick's endpoint sits behind Cloudflare and sometimes refuses requests. The bar k
 Run the `xattr -dr com.apple.quarantine …` command from the install steps. The macOS package is for Apple Silicon only.
 </details>
 
+<details>
+<summary><b>OBS says the plugin could not be loaded, or "Goal Bar" doesn't appear in the sources</b></summary>
+
+1. Check your OBS version (**Help → About**): it must be 33 or later. On Linux, use the OBS from the official PPA; the `obs-studio` package that comes with the distribution is usually older and can't load this plugin.
+2. Check the folder against the [install steps](#-install). The most common mistake is one folder too many or too few: on Windows the file must end up at `…\plugins\obs-goal-bar\bin\64bit\obs-goal-bar.dll`; on macOS the `.plugin` goes directly inside `plugins`.
+3. On macOS, run the `xattr -dr com.apple.quarantine …` command from the install steps. The macOS package is for Apple Silicon only.
+4. Open **Help → Log Files → View Current Log** and search for `obs-goal-bar`. If there is no `[obs-goal-bar] loaded` line, [open an issue](../../issues) with the lines that mention the plugin.
+</details>
+
+<details>
+<summary><b>Comments or bits don't count</b></summary>
+
+They are counted from the live chat only while OBS is open. Twitch needs the account connected in the source properties; YouTube needs the channel to be live with its chat on; on Kick, check the channel name. The OBS log shows lines such as `[obs-goal-bar] twitch chat comments: live` or the error that stopped the chat.
+</details>
+
 ## 🔐 Privacy
 
-| Data | Where it goes |
-|------|---------------|
-| Twitch login | The refresh token lives in the system keychain (macOS Keychain, Windows Credential Manager or the Linux Secret Service); the access token only in memory |
-| YouTube | The public live page is read; no sign-in, no keys |
-| Network | The plugin only talks to youtube.com, twitch.tv (id.twitch.tv, api.twitch.tv and, for chat goals, irc-ws.chat.twitch.tv), kick.com (plus Kick's chat service on pusher.com) and github.com (to check for and download updates). It sends no data anywhere else, and there's no telemetry |
+AC Goal Bar has no telemetry and no account of its own. It only connects to the services below: the platform each source uses, and GitHub for updates.
+
+**What it connects to**
+
+| Service | When | What for |
+|---|---|---|
+| **YouTube** (`www.youtube.com`) | A source uses YouTube | Reads the public `/@handle/live` page (likes and subscribers) and, for a comments goal, the public live chat. No sign-in, no API key |
+| **Twitch** (`id.twitch.tv`, `api.twitch.tv`) | You connect Twitch | Sign-in with a code on twitch.tv/activate, then followers and subscribers of your channel through the official API |
+| **Twitch chat** (`irc-ws.chat.twitch.tv`) | A Twitch source counts comments or bits | Reads your channel's chat anonymously and read-only (it never writes in it) |
+| **Kick** (`kick.com`, `web.kick.com`, Kick's chat on `ws-*.pusher.com`) | A source uses Kick | Reads the channel's public data (followers, viewers) and, for a comments goal, its public chat. No account |
+| **GitHub** (`api.github.com`, `github.com`) | When OBS starts (at most once a day) and when you check for updates | Looks for a newer release and, if you accept, downloads it (GitHub may serve the file from its download servers). The request carries the plugin version (`obs-goal-bar-updater/<version>`) |
+
+The only things sent to these services are the requests themselves: your `@handle` or channel name to the platform you chose, and your Twitch token to Twitch.
+
+**What it saves on your computer**
+
+| What | Where |
+|---|---|
+| The source settings (title, platform, `@handle` or channel, metric, goal values, style, actions) | In the OBS scene collection, like any other source |
+| Twitch sign-in: the refresh token and your Twitch user (id, login, display name, channel type) | In the system keychain under `com.alejox.obs-goal-bar` (macOS Keychain, Windows Credential Manager or the Linux Secret Service), never in plain text. The access token is kept only in memory. **Disconnect Twitch** in the source properties deletes them |
+| Update settings (`update.json`: automatic check on or off, last check, skipped version), the result of the last update (`update-result.txt`) and a downloaded update waiting to be installed (`update/`) | In the plugin's OBS settings folder (`plugin_config/obs-goal-bar`) |
 
 ## 🧭 Status
 
-macOS (Apple Silicon) is tested inside OBS. Windows x64 and Linux x86_64 are built, unit-tested and packaged in CI (GitHub Actions); reports from those systems are welcome in [Issues](../../issues).
+Every release is tested inside OBS on macOS (Apple Silicon), Windows x64 and Linux x86_64, and the three packages are built, unit-tested and packaged in CI (GitHub Actions) from the same commit.
+
+## 🐞 Report a problem
+
+Open an [issue on GitHub](../../issues) with:
+
+- your system (macOS, Windows or Linux, and its version), your OBS version and the AC Goal Bar version (**Tools → AC Goal Bar: Check for updates** shows it);
+- what you did and what you expected;
+- the lines that mention `obs-goal-bar` in **Help → Log Files → View Current Log**.
 
 ## 🛠️ Build from source
 
@@ -179,8 +236,14 @@ ctest --test-dir build_tests --output-on-failure
 ```
 </details>
 
+## 🤖 How this plugin is made
+
+AC Goal Bar is developed with the help of an AI coding assistant (Anthropic Claude, via Claude Code), directed by the maintainer: a large part of the code was written with it. AI was used to write and modify the C++ plugin code and its tests, the build and release workflows, and the documentation, including this README. Alejandro (Alejoxgaming) designs the features, reviews the changes, tests every release in OBS on his own streams on Windows, macOS and Linux, decides what ships and maintains the project. The commit history shows which changes were AI-assisted.
+
+If you find a bug, please [open an issue](../../issues): every report is read and answered by a person.
+
 ## 📄 License
 
-GPL-2.0-or-later, like every plugin that links against libobs. See [LICENSE](LICENSE).
+GPL-2.0 or later, like every plugin that links against libobs — see [LICENSE](LICENSE).
 
-AC Goal Bar is an independent project, not affiliated with or endorsed by the OBS Project, YouTube, Twitch or Kick.
+AC Goal Bar is an independent, third-party plugin for OBS Studio; it is not affiliated with or endorsed by the OBS Project, YouTube, Twitch or Kick. The "GTA 6 (Vice City)" styles are an original look inspired by the game's colors; they use no Rockstar Games artwork or logos, and AC Goal Bar is not affiliated with Rockstar Games or Take-Two Interactive. All trademarks belong to their owners.
