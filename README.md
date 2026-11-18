@@ -10,6 +10,7 @@
 ![Linux](https://img.shields.io/badge/Linux-Ubuntu%2024.04%2B-E95420?logo=ubuntu&logoColor=white)
 ![OBS](https://img.shields.io/badge/OBS-33%2B-302E31?logo=obsstudio&logoColor=white)
 [![License](https://img.shields.io/badge/license-GPL--2.0-blue)](LICENSE)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20coffee-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/alejoxcode)
 
 **English** · [Español](README.es.md)
 
@@ -235,6 +236,10 @@ cmake --build build_tests
 ctest --test-dir build_tests --output-on-failure
 ```
 </details>
+
+## ☕ Support
+
+AC Goal Bar is free and will stay free. If it saves you time on your streams, you can [buy me a coffee on Ko-fi](https://ko-fi.com/alejoxcode): it pays for development hours and the next features. The plugin never asks on its own; the link is the last button in the Goal Bar source's Properties.
 
 ## 🤖 How this plugin is made
 

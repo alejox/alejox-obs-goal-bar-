@@ -10,6 +10,7 @@
 ![Linux](https://img.shields.io/badge/Linux-Ubuntu%2024.04%2B-E95420?logo=ubuntu&logoColor=white)
 ![OBS](https://img.shields.io/badge/OBS-33%2B-302E31?logo=obsstudio&logoColor=white)
 [![Licencia](https://img.shields.io/badge/licencia-GPL--2.0-blue)](LICENSE)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-inv%C3%ADtame%20un%20caf%C3%A9-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/alejoxcode)
 
 [English](README.md) · **Español**
 
@@ -235,6 +236,10 @@ cmake --build build_tests
 ctest --test-dir build_tests --output-on-failure
 ```
 </details>
+
+## ☕ Apoyar
+
+AC Goal Bar es gratis y lo va a seguir siendo. Si te ahorra tiempo en tus directos, puedes [invitarme un café en Ko-fi](https://ko-fi.com/alejoxcode): paga horas de desarrollo y las próximas funciones. El plugin nunca lo pide solo; el enlace es el último botón de las Propiedades de la fuente Barra de meta.
 
 ## 🤖 Cómo está hecho este plugin
 

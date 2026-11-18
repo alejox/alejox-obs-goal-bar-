@@ -14,6 +14,7 @@
 #include "obs/twitch_services.hpp"
 #include "providers/twitch_provider.hpp"
 #include "render/goal_bar_painter.hpp"
+#include "ui/support_dialog.hpp"
 #include "ui/twitch_connect_dialog.hpp"
 
 #include <obs-frontend-api.h>
@@ -55,6 +56,7 @@ constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
 constexpr const char *kKickChannelKey = "kick_channel";
 constexpr const char *kChatMinCharsKey = "chat_min_chars";
 constexpr const char *kChatNoticeKey = "chat_notice";
+constexpr const char *kSupportKey = "support";
 // Bumped on every goal change made by the plugin itself (provider reading,
 // auto next goal, reset). A settings object with an older revision is a stale
 // snapshot, e.g. the one the properties dialog restores on Cancel.
@@ -785,6 +787,13 @@ bool twitch_connect_clicked(obs_properties_t *props, obs_property_t *, void *)
 	return true;
 }
 
+// Last in the properties, low-key: the Ko-fi support message. Only opens on click.
+bool support_clicked(obs_properties_t *, obs_property_t *, void *)
+{
+	ui::run_support_dialog(static_cast<QWidget *>(obs_frontend_get_main_window()));
+	return false;
+}
+
 bool twitch_disconnect_clicked(obs_properties_t *props, obs_property_t *, void *)
 {
 	twitch_account()->disconnect();
@@ -933,6 +942,8 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_properties_add_button2(props, kResetKey, obs_module_text("GoalBar.ResetGoal"), reset_goal_clicked, data);
 	auto *self = static_cast<GoalBarSource *>(data);
 	add_action_properties(props, self ? self->source : nullptr, test_celebration_clicked, data);
+	const std::string support = std::string("☕ ") + obs_module_text("Support.Link");
+	obs_properties_add_button2(props, kSupportKey, support.c_str(), support_clicked, nullptr);
 	return props;
 }
 
