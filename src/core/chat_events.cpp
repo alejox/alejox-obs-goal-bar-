@@ -302,6 +302,28 @@ std::size_t kick_content_length(std::string_view content)
 	return visible_length(text, emote);
 }
 
+// Event names without Kick's old "App\\Events\\" prefix.
+std::string_view kick_event_name(std::string_view event)
+{
+	constexpr std::string_view prefix = "App\\Events\\";
+	if (event.substr(0, prefix.size()) == prefix)
+		event.remove_prefix(prefix.size());
+	return event;
+}
+
+// GiftedSubscriptionsEvent was seen live (2026-11-18); a plain subscription
+// was not, so its known names are all accepted.
+bool kick_gift_event(std::string_view event)
+{
+	return kick_event_name(event) == "GiftedSubscriptionsEvent";
+}
+
+bool kick_paid_event(std::string_view event)
+{
+	const std::string_view name = kick_event_name(event);
+	return kick_gift_event(event) || name == "SubscriptionEvent" || name == "ChannelSubscriptionEvent";
+}
+
 constexpr std::string_view kKickFallbackKey = "34bf7a0ff419a2a775b9";
 constexpr std::string_view kKickFallbackCluster = "us2";
 
@@ -330,13 +352,12 @@ KickFrame parse_kick_frame(std::string_view frame)
 		if (data.is_object())
 			out.message = "Pusher " + std::to_string(data.value("code", 0)) + ": " +
 				      data.value("message", std::string());
-	} else if ((event == "SubscriptionEvent" || event == "GiftedSubscriptionsEvent") &&
-		   doc.value("channel", std::string()).rfind("chatroom_", 0) == 0) {
+	} else if (kick_paid_event(event) && doc.value("channel", std::string()).rfind("chatroom_", 0) == 0) {
 		// Paid subscriptions, only from the chatroom_<id> channel (see kick_subscribe_messages).
 		const json data = doc.contains("data") ? unwrap(doc["data"]) : json();
 		if (data.is_object()) {
 			out.kind = KickFrame::Kind::Paid;
-			if (event == "SubscriptionEvent") {
+			if (!kick_gift_event(event)) {
 				out.event.paid_subs = 1;
 			} else if (data.contains("gifted_usernames") && data["gifted_usernames"].is_array()) {
 				// One per recipient: a big gift arrives in several chunks, each with its names.

@@ -234,6 +234,16 @@ TEST_CASE(kick_gifted_subscriptions_count_each_recipient)
 	CHECK(!frame.event.is_message);
 }
 
+TEST_CASE(kick_subscription_names_are_all_accepted)
+{
+	for (const char *name : {"SubscriptionEvent", "ChannelSubscriptionEvent", "App\\\\Events\\\\SubscriptionEvent"}) {
+		const KickFrame frame = parse_kick_frame(std::string(R"({"event":")") + name +
+							 R"(","data":"{\"username\":\"ana\"}","channel":"chatroom_7"})");
+		CHECK(frame.kind == KickFrame::Kind::Paid);
+		CHECK_EQ(frame.event.paid_subs, uint64_t{1});
+	}
+}
+
 TEST_CASE(kick_subscription_counts_one)
 {
 	const KickFrame frame = parse_kick_frame(
