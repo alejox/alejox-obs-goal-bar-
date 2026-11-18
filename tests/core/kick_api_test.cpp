@@ -86,6 +86,35 @@ TEST_CASE(offline_channel_has_followers_and_no_viewers)
 	CHECK(!viewers.value.has_value());
 }
 
+// Kick sends the counts sometimes as numbers and sometimes as strings (seen
+// 2026-11-18 on the same channel within minutes: 4 and "4").
+TEST_CASE(counts_sent_as_strings_are_read)
+{
+	const KickChannelLookup offline =
+		parse_kick_channel(200, R"({"slug":"alejoxcode","followers_count":"4","livestream":null})");
+	REQUIRE(offline.channel.has_value());
+	CHECK_EQ(offline.channel->followers.value_or(99), uint64_t{4});
+	const MetricReading followers = kick_metric_reading(offline, Metric::Followers);
+	CHECK_EQ(followers.state, ProviderState::Live);
+	CHECK_EQ(followers.value.value_or(99), uint64_t{4});
+
+	const KickChannelLookup live = parse_kick_channel(
+		200, R"({"followers_count":"1200","livestream":{"is_live":true,"viewer_count":"35"}})");
+	REQUIRE(live.channel.has_value());
+	CHECK_EQ(kick_metric_reading(live, Metric::Viewers).value.value_or(0), uint64_t{35});
+}
+
+TEST_CASE(non_numeric_counts_are_still_missing)
+{
+	for (const char *body : {R"({"followers_count":""})", R"({"followers_count":"-3"})",
+				 R"({"followers_count":"4 mil"})", R"({"followers_count":"99999999999999999999999"})",
+				 R"({"followers_count":null})", R"({"followers_count":-1})"}) {
+		const KickChannelLookup lookup = parse_kick_channel(200, body);
+		REQUIRE(lookup.channel.has_value());
+		CHECK(!lookup.channel->followers.has_value());
+	}
+}
+
 TEST_CASE(live_channel_has_viewers)
 {
 	const KickChannelLookup lookup = parse_kick_channel(200, kLiveChannel);

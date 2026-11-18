@@ -351,9 +351,12 @@ std::optional<uint64_t> kick_chatroom_id(std::string_view channel_json)
 	const json doc = parse_json(channel_json);
 	if (!doc.is_object() || !doc.contains("chatroom") || !doc["chatroom"].is_object())
 		return std::nullopt;
+	// Kick sends some numbers as strings of digits too ("id": 668 or "668").
 	const json &id = doc["chatroom"]["id"];
 	if (id.is_number_unsigned() || (id.is_number_integer() && id.get<int64_t>() >= 0))
 		return id.get<uint64_t>();
+	if (id.is_string())
+		return to_uint(id.get<std::string>());
 	return std::nullopt;
 }
 

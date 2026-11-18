@@ -134,6 +134,8 @@ TEST_CASE(kick_chatroom_and_pusher_settings)
 {
 	CHECK(kick_chatroom_id(R"({"id":1,"slug":"x","chatroom":{"id":668,"chatable_type":"App\\Models\\Channel"}})") ==
 	      uint64_t{668});
+	CHECK(kick_chatroom_id(R"({"chatroom":{"id":"668"}})") == uint64_t{668});
+	CHECK(!kick_chatroom_id(R"({"chatroom":{"id":"abc"}})").has_value());
 	CHECK(!kick_chatroom_id(R"({"slug":"x"})").has_value());
 	CHECK(!kick_chatroom_id("<html>").has_value());
 	const std::string realtime =
