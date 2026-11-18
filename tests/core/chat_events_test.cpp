@@ -221,3 +221,64 @@ TEST_CASE(chat_tally_counts_bits_or_comments)
 	CHECK_EQ(bits.total(), uint64_t{200});
 	CHECK_EQ(comments.total(), uint64_t{1}); // the cheers have only 3 characters
 }
+
+// ---- paid subscriptions -----------------------------------------------------
+
+// Seen on Kick 2026-11-18 (channel chatroom_<id>, no "App\\Events\\" prefix).
+TEST_CASE(kick_gifted_subscriptions_count_each_recipient)
+{
+	const KickFrame frame = parse_kick_frame(
+		R"({"event":"GiftedSubscriptionsEvent","data":"{\"chatroom_id\":669512,\"gifted_usernames\":[\"a\",\"b\",\"c\"],\"gifter_username\":\"g\",\"gifted_total\":3,\"gifter_total\":40,\"chunk_details\":null}","channel":"chatroom_669512"})");
+	CHECK(frame.kind == KickFrame::Kind::Paid);
+	CHECK_EQ(frame.event.paid_subs, uint64_t{3});
+	CHECK(!frame.event.is_message);
+}
+
+TEST_CASE(kick_subscription_counts_one)
+{
+	const KickFrame frame = parse_kick_frame(
+		R"({"event":"SubscriptionEvent","data":"{\"chatroom_id\":668,\"username\":\"ana\",\"months\":3}","channel":"chatroom_668"})");
+	CHECK(frame.kind == KickFrame::Kind::Paid);
+	CHECK_EQ(frame.event.paid_subs, uint64_t{1});
+}
+
+// The same kind of event on the old chatrooms.<id>.v2 channel is ignored, so a
+// subscription announced on both channels is never counted twice.
+TEST_CASE(kick_paid_events_only_from_the_chatroom_channel)
+{
+	const KickFrame frame = parse_kick_frame(
+		R"({"event":"App\\Events\\SubscriptionEvent","data":"{\"chatroom_id\":668,\"username\":\"ana\",\"months\":3}","channel":"chatrooms.668.v2"})");
+	CHECK(frame.kind == KickFrame::Kind::Other);
+}
+
+TEST_CASE(kick_subscribes_to_chat_and_events)
+{
+	const std::vector<std::string> messages = kick_subscribe_messages(668);
+	CHECK_EQ(messages.size(), size_t{2});
+	CHECK_EQ(messages[0], kick_subscribe_message(668));
+	CHECK_EQ(messages[1], std::string(R"({"data":{"auth":"","channel":"chatroom_668"},"event":"pusher:subscribe"})"));
+}
+
+TEST_CASE(youtube_memberships_and_gift_redemptions)
+{
+	const std::string json = R"({"continuationContents":{"liveChatContinuation":{
+		"continuations":[{"timedContinuationData":{"continuation":"C","timeoutMs":3000}}],
+		"actions":[
+		 {"addChatItemAction":{"item":{"liveChatMembershipItemRenderer":{"id":"m1","headerSubtext":{"simpleText":"Welcome to Canal!"}}}}},
+		 {"addChatItemAction":{"item":{"liveChatMembershipItemRenderer":{"id":"m2","headerPrimaryText":{"runs":[{"text":"Member for "},{"text":"6"},{"text":" months"}]},"message":{"runs":[{"text":"seis meses ya"}]}}}}},
+		 {"addChatItemAction":{"item":{"liveChatSponsorshipsGiftPurchaseAnnouncementRenderer":{"id":"g","header":{"liveChatSponsorshipsHeaderRenderer":{"primaryText":{"runs":[{"text":"Gifted "},{"text":"2"},{"text":" memberships"}]}}}}}}},
+		 {"addChatItemAction":{"item":{"liveChatSponsorshipsGiftRedemptionAnnouncementRenderer":{"id":"r1","message":{"runs":[{"text":"received a gift membership by "},{"text":"g"}]}}}}},
+		 {"addChatItemAction":{"item":{"liveChatSponsorshipsGiftRedemptionAnnouncementRenderer":{"id":"r2","message":{"runs":[{"text":"received a gift membership by "},{"text":"g"}]}}}}},
+		 {"addChatItemAction":{"item":{"liveChatTextMessageRenderer":{"id":"t","message":{"runs":[{"text":"hola"}]}}}}}
+		]}}})";
+	const YoutubeChatBatch batch = parse_youtube_chat_batch(json);
+	ChatTally paid(Metric::PaidSubs, 0);
+	ChatTally comments(Metric::Comments, 1);
+	for (const ChatEvent &event : batch.messages) {
+		paid.add(event);
+		comments.add(event);
+	}
+	// New member + renewal + two gift recipients; the purchase itself is not counted again.
+	CHECK_EQ(paid.total(), uint64_t{4});
+	CHECK_EQ(comments.total(), uint64_t{1}); // only "hola" is a chat message
+}

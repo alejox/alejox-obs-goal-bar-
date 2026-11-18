@@ -32,7 +32,7 @@ A native OBS source (no browser source, no web page, no external app). YouTube a
 | ▶️ | **YouTube, public mode** | Reads the live stream's likes and subscribers from the channel's public page (`@handle`), no sign-in |
 | 🟣 | **Twitch** | Followers and subscribers through the official API. Connect your account with a code on twitch.tv/activate |
 | 🟢 | **Kick** | Followers and viewers of any channel, no Kick account or app needed (undocumented public endpoint, see below) |
-| 💬 | **Chat goals** | **Comments** (YouTube, Twitch, Kick) with a minimum length you choose, and **Bits** (Twitch), counted from the live chat while OBS is open |
+| 💬 | **Chat goals** | **Comments** (YouTube, Twitch, Kick) with a minimum length you choose, **Bits** (Twitch) and **Paid subscriptions** (YouTube memberships, Kick subscriptions), counted from the live chat while OBS is open |
 | ✍️ | **Manual mode** | Type the current value yourself; always available |
 | 🎉 | **Celebration** | When the goal is reached: a glow and confetti over the bar |
 | 🎬 | **Show a source** | Shows a scene source (image, text, audio or video). Audio and video play from the start and hide when they end |
@@ -110,13 +110,14 @@ In OBS, **Help → Log Files → View Current Log** should show `[obs-goal-bar] 
 
 Followers work with any account. Subscribers need a Twitch Affiliate or Partner channel; otherwise the bar says so.
 
-### 💬 Comments and bits
+### 💬 Comments, bits and paid subscriptions
 
-Pick the metric **Comments** (YouTube, Twitch or Kick) or **Bits** (Twitch). The bar counts them from the live chat, the same way multi-chat reads it:
+Pick the metric **Comments** (YouTube, Twitch or Kick), **Bits** (Twitch) or **Paid subscriptions** (YouTube or Kick). The bar counts them from the live chat, the same way multi-chat reads it:
 
 - **Comments**: every message with at least **Minimum characters per comment** (5 by default; leading and trailing spaces don't count, each emote or emoji counts as one character).
 - **Bits**: the bits of every cheer in the chat. No extra Twitch permission is needed: the chat is read anonymously, so you don't have to reconnect your account.
-- Only what happens **while OBS is open** is counted. Switching a source to comments or bits starts at 0; change **Current value** to start from another number.
+- **Paid subscriptions**: YouTube channel memberships and Kick subscriptions. Each new one, each renewal and each gifted one adds 1 (a gift of 5 adds 5). YouTube and Kick don't publish a total of paid subscribers, so they are counted from the chat. On Twitch, **Subscribers** is already the paid total (read from Twitch's API); YouTube **Subscribers** are the free ones.
+- Only what happens **while OBS is open** is counted. Switching a source to one of these metrics starts at 0; change **Current value** to start from another number (for example, your current number of members).
 - Twitch reads the chat of the connected account; YouTube the live stream of the `@handle` (it waits while the channel is offline); Kick the chat of the channel you typed.
 
 ### 🟢 Kick

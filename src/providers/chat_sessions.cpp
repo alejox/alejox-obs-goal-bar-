@@ -124,7 +124,8 @@ ChatSession kick_chat_session(ChatNet net, std::string slug)
 		if (!socket)
 			return "Kick chat: " + error;
 		host.attach(socket);
-		socket->send(kick_subscribe_message(*chatroom));
+		for (const std::string &subscribe : kick_subscribe_messages(*chatroom))
+			socket->send(subscribe);
 
 		std::string data;
 		while (!host.stopping()) {
@@ -141,6 +142,7 @@ ChatSession kick_chat_session(ChatNet net, std::string slug)
 			case KickFrame::Kind::Error:
 				return frame.message.empty() ? std::string("Kick chat error") : frame.message;
 			case KickFrame::Kind::Chat:
+			case KickFrame::Kind::Paid:
 				host.add(frame.event);
 				break;
 			case KickFrame::Kind::Other:

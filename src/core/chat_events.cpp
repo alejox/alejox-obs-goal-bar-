@@ -147,6 +147,8 @@ void ChatTally::add(const ChatEvent &event)
 {
 	if (metric_ == Metric::Bits)
 		total_ += event.bits;
+	else if (metric_ == Metric::PaidSubs)
+		total_ += event.paid_subs;
 	else if (metric_ == Metric::Comments && counts_as_comment(event, min_chars_))
 		++total_;
 }
@@ -328,6 +330,19 @@ KickFrame parse_kick_frame(std::string_view frame)
 		if (data.is_object())
 			out.message = "Pusher " + std::to_string(data.value("code", 0)) + ": " +
 				      data.value("message", std::string());
+	} else if ((event == "SubscriptionEvent" || event == "GiftedSubscriptionsEvent") &&
+		   doc.value("channel", std::string()).rfind("chatroom_", 0) == 0) {
+		// Paid subscriptions, only from the chatroom_<id> channel (see kick_subscribe_messages).
+		const json data = doc.contains("data") ? unwrap(doc["data"]) : json();
+		if (data.is_object()) {
+			out.kind = KickFrame::Kind::Paid;
+			if (event == "SubscriptionEvent") {
+				out.event.paid_subs = 1;
+			} else if (data.contains("gifted_usernames") && data["gifted_usernames"].is_array()) {
+				// One per recipient: a big gift arrives in several chunks, each with its names.
+				out.event.paid_subs = data["gifted_usernames"].size();
+			}
+		}
 	} else if (event == "App\\Events\\ChatMessageEvent") {
 		const json data = doc.contains("data") ? unwrap(doc["data"]) : json();
 		if (data.is_object() && data.contains("content") && data["content"].is_string()) {
@@ -344,6 +359,13 @@ std::string kick_subscribe_message(uint64_t chatroom_id)
 	json message = {{"event", "pusher:subscribe"},
 			{"data", {{"auth", ""}, {"channel", "chatrooms." + std::to_string(chatroom_id) + ".v2"}}}};
 	return message.dump();
+}
+
+std::vector<std::string> kick_subscribe_messages(uint64_t chatroom_id)
+{
+	json events = {{"event", "pusher:subscribe"},
+		       {"data", {{"auth", ""}, {"channel", "chatroom_" + std::to_string(chatroom_id)}}}};
+	return {kick_subscribe_message(chatroom_id), events.dump()};
 }
 
 std::optional<uint64_t> kick_chatroom_id(std::string_view channel_json)
@@ -484,6 +506,16 @@ YoutubeChatBatch parse_youtube_chat_batch(std::string_view text)
 			if (!add.is_object() || !add.contains("item") || !add["item"].is_object())
 				continue;
 			const json &item = add["item"];
+			// Memberships: a new member or a renewal ("Member for 6 months"), and each
+			// gift recipient. The gift purchase announcement is not counted: its
+			// recipients each get their own redemption item.
+			if (item.contains("liveChatMembershipItemRenderer") ||
+			    item.contains("liveChatSponsorshipsGiftRedemptionAnnouncementRenderer")) {
+				ChatEvent event;
+				event.paid_subs = 1;
+				out.messages.push_back(event);
+				continue;
+			}
 			for (const char *renderer : {"liveChatTextMessageRenderer", "liveChatPaidMessageRenderer"}) {
 				if (!item.contains(renderer) || !item[renderer].is_object())
 					continue;

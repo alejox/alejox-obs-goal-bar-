@@ -290,3 +290,25 @@ TEST_CASE(youtube_chat_waits_while_not_live)
 	CHECK(reading.state == ProviderState::NotLive);
 	CHECK_EQ(*reading.value, uint64_t{0});
 }
+
+TEST_CASE(kick_chat_counts_paid_subscriptions)
+{
+	FakeNet fake;
+	fake.answer_get = [](const std::string &) {
+		return HttpResult{200, R"({"slug":"streamer","chatroom":{"id":668}})", ""};
+	};
+	fake.answer_post = [](const std::string &, const std::string &) { return HttpResult{503, "", ""}; };
+	fake.socket = std::make_shared<FakeSocket>(std::vector<std::string>{
+		R"({"event":"pusher_internal:subscription_succeeded","data":"{}","channel":"chatrooms.668.v2"})",
+		R"({"event":"App\\Events\\ChatMessageEvent","data":"{\"content\":\"hola a todos\"}","channel":"chatrooms.668.v2"})",
+		R"({"event":"SubscriptionEvent","data":"{\"chatroom_id\":668,\"username\":\"ana\",\"months\":1}","channel":"chatroom_668"})",
+		R"({"event":"GiftedSubscriptionsEvent","data":"{\"chatroom_id\":668,\"gifted_usernames\":[\"a\",\"b\"],\"gifter_username\":\"g\",\"gifted_total\":2}","channel":"chatroom_668"})"});
+	ChatCountProvider provider(Platform::Kick, Metric::PaidSubs, 0, kick_chat_session(fake.net(), "streamer"), nullptr);
+	const MetricReading reading = wait_for(provider, [](const MetricReading &r) { return r.value == 3u; });
+	CHECK_EQ(*reading.value, uint64_t{3});
+	// Subscribed to both channels; the fallback Pusher app when the realtime lookup fails.
+	CHECK(fake.socket->sent_contains(kick_subscribe_message(668)));
+	CHECK(fake.socket->sent_contains(kick_subscribe_messages(668)[1]));
+	CHECK_EQ(*fake.connected_url, std::string("wss://ws-us2.pusher.com/app/34bf7a0ff419a2a775b9?protocol=7&client=js&"
+						   "version=8.4.0&flash=false"));
+}
