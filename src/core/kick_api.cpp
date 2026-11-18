@@ -36,12 +36,29 @@ bool is_slug_char(char c)
 	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
+// A non-negative count. Kick sends the same field sometimes as a number and
+// sometimes as a string of digits ("followers_count": 4 or "4").
 std::optional<uint64_t> unsigned_field(const json &object, const char *key)
 {
 	const auto it = object.find(key);
-	if (it == object.end() || !it->is_number_integer() || it->get<long long>() < 0)
+	if (it == object.end())
 		return std::nullopt;
-	return it->get<uint64_t>();
+	if (it->is_number_unsigned())
+		return it->get<uint64_t>();
+	if (it->is_number_integer())
+		return it->get<long long>() < 0 ? std::nullopt : std::optional<uint64_t>(it->get<long long>());
+	if (!it->is_string())
+		return std::nullopt;
+	const std::string &text = it->get_ref<const std::string &>();
+	if (text.empty() || text.size() > 19)
+		return std::nullopt;
+	uint64_t value = 0;
+	for (char c : text) {
+		if (c < '0' || c > '9')
+			return std::nullopt;
+		value = value * 10 + uint64_t(c - '0');
+	}
+	return value;
 }
 
 } // namespace
