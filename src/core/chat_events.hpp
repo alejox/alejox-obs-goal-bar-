@@ -93,6 +93,7 @@ std::string kick_subscribe_message(uint64_t chatroom_id);
 // chatroom_<id> the paid subscriptions (checked 2026-11-18).
 std::vector<std::string> kick_subscribe_messages(uint64_t chatroom_id);
 inline constexpr std::string_view kKickPong = R"({"event":"pusher:pong","data":{}})";
+inline constexpr std::string_view kKickPing = R"({"event":"pusher:ping","data":{}})";
 
 // The chatroom id in a GET /api/v2/channels/<slug> answer.
 std::optional<uint64_t> kick_chatroom_id(std::string_view channel_json);

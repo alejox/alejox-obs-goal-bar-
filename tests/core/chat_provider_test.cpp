@@ -312,3 +312,35 @@ TEST_CASE(kick_chat_counts_paid_subscriptions)
 	CHECK_EQ(*fake.connected_url, std::string("wss://ws-us2.pusher.com/app/34bf7a0ff419a2a775b9?protocol=7&client=js&"
 						   "version=8.4.0&flash=false"));
 }
+
+// A quiet connection gets a ping; with no answer it is closed and reconnected.
+TEST_CASE(quiet_kick_chat_is_pinged_then_reconnected)
+{
+	FakeNet fake;
+	fake.answer_get = [](const std::string &) {
+		return HttpResult{200, R"({"slug":"streamer","chatroom":{"id":668}})", ""};
+	};
+	fake.socket = std::make_shared<FakeSocket>(std::vector<std::string>{
+		R"({"event":"pusher_internal:subscription_succeeded","data":"{}","channel":"chatrooms.668.v2"})"});
+	ChatCountProvider provider(Platform::Kick, Metric::Comments, 1,
+				   kick_chat_session(fake.net(), "streamer", ChatKeepAlive{50ms, 150ms}), nullptr);
+	const MetricReading reading = wait_for(provider, [](const MetricReading &r) {
+		return r.state == ProviderState::Error && r.message.find("quiet") != std::string::npos;
+	});
+	CHECK(reading.state == ProviderState::Error);
+	CHECK_EQ(reading.message, std::string("the Kick chat went quiet; reconnecting"));
+	CHECK(fake.socket->sent_contains(std::string(kKickPing)));
+}
+
+TEST_CASE(quiet_twitch_chat_is_pinged_then_reconnected)
+{
+	FakeNet fake;
+	fake.socket = std::make_shared<FakeSocket>(std::vector<std::string>{kTwitchScript});
+	ChatCountProvider provider(Platform::Twitch, Metric::Comments, 1,
+				   twitch_chat_session(fake.net(), logged_in("canal"), ChatKeepAlive{50ms, 150ms}), nullptr);
+	const MetricReading reading = wait_for(provider, [](const MetricReading &r) {
+		return r.state == ProviderState::Error && r.message.find("quiet") != std::string::npos;
+	});
+	CHECK_EQ(reading.message, std::string("the Twitch chat went quiet; reconnecting"));
+	CHECK(fake.socket->sent_contains("PING :tmi.twitch.tv"));
+}
