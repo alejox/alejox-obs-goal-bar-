@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <random>
 #include <string_view>
 #include <utility>
@@ -31,6 +33,81 @@ template<typename F> void for_each_line(std::string_view data, F &&f)
 	}
 }
 
+// Pings a quiet socket and closes it when it stays quiet (see ChatKeepAlive).
+class SocketWatchdog {
+public:
+	SocketWatchdog(std::shared_ptr<ChatSocket> socket, ChatKeepAlive keep_alive, std::string ping)
+		: socket_(std::move(socket)),
+		  keep_alive_(keep_alive),
+		  ping_(std::move(ping)),
+		  last_(std::chrono::steady_clock::now()),
+		  thread_([this] { run(); })
+	{
+	}
+	~SocketWatchdog()
+	{
+		{
+			std::lock_guard lock(mutex_);
+			stop_ = true;
+		}
+		wake_.notify_all();
+		thread_.join();
+	}
+	SocketWatchdog(const SocketWatchdog &) = delete;
+	SocketWatchdog &operator=(const SocketWatchdog &) = delete;
+
+	// A message arrived: the connection is alive.
+	void heard()
+	{
+		std::lock_guard lock(mutex_);
+		last_ = std::chrono::steady_clock::now();
+		pinged_ = false;
+	}
+
+	bool timed_out() const
+	{
+		std::lock_guard lock(mutex_);
+		return timed_out_;
+	}
+
+private:
+	void run()
+	{
+		const auto step = std::max<std::chrono::milliseconds>(
+			std::chrono::milliseconds(10),
+			std::min(keep_alive_.ping_after, keep_alive_.give_up_after - keep_alive_.ping_after) / 4);
+		std::unique_lock lock(mutex_);
+		while (!stop_) {
+			if (wake_.wait_for(lock, step, [this] { return stop_; }))
+				return;
+			const auto quiet = std::chrono::steady_clock::now() - last_;
+			if (quiet >= keep_alive_.give_up_after) {
+				timed_out_ = true;
+				lock.unlock();
+				socket_->close();
+				return;
+			}
+			if (quiet >= keep_alive_.ping_after && !pinged_) {
+				pinged_ = true;
+				lock.unlock();
+				socket_->send(ping_);
+				lock.lock();
+			}
+		}
+	}
+
+	const std::shared_ptr<ChatSocket> socket_;
+	const ChatKeepAlive keep_alive_;
+	const std::string ping_;
+	mutable std::mutex mutex_;
+	std::condition_variable wake_;
+	std::chrono::steady_clock::time_point last_;
+	bool pinged_ = false;
+	bool timed_out_ = false;
+	bool stop_ = false;
+	std::thread thread_; // last member: starts after everything above exists
+};
+
 std::string http_error(const char *what, const HttpResult &result)
 {
 	return std::string(what) + (result.status ? " answered HTTP " + std::to_string(result.status)
@@ -48,9 +125,9 @@ const HttpHeaders kYoutubeHeaders = {{"Cookie", "CONSENT=YES+1; SOCS=CAI"}, {"Ac
 
 } // namespace
 
-ChatSession twitch_chat_session(ChatNet net, TwitchLoginLookup lookup)
+ChatSession twitch_chat_session(ChatNet net, TwitchLoginLookup lookup, ChatKeepAlive keep_alive)
 {
-	return [net = std::move(net), lookup = std::move(lookup)](ChatSessionHost &host) -> std::string {
+	return [net = std::move(net), lookup = std::move(lookup), keep_alive](ChatSessionHost &host) -> std::string {
 		const std::optional<std::string> login = lookup(host.cancel());
 		if (!login || login->empty()) {
 			host.set_state(ProviderState::AuthRequired);
@@ -64,11 +141,17 @@ ChatSession twitch_chat_session(ChatNet net, TwitchLoginLookup lookup)
 		host.attach(socket);
 		for (const std::string &command : twitch_join_commands(*login, guest_number()))
 			socket->send(command);
+		SocketWatchdog watchdog(socket, keep_alive, "PING :tmi.twitch.tv");
 
 		std::string data;
 		while (!host.stopping()) {
-			if (!socket->receive(data))
-				return host.stopping() ? std::string() : std::string("Twitch closed the chat connection");
+			if (!socket->receive(data)) {
+				if (host.stopping())
+					return {};
+				return watchdog.timed_out() ? "the Twitch chat went quiet; reconnecting"
+							    : "Twitch closed the chat connection";
+			}
+			watchdog.heard();
 			std::string failure;
 			for_each_line(data, [&](std::string_view text) {
 				const IrcLine line = parse_irc_line(text);
@@ -94,9 +177,9 @@ ChatSession twitch_chat_session(ChatNet net, TwitchLoginLookup lookup)
 	};
 }
 
-ChatSession kick_chat_session(ChatNet net, std::string slug)
+ChatSession kick_chat_session(ChatNet net, std::string slug, ChatKeepAlive keep_alive)
 {
-	return [net = std::move(net), slug = std::move(slug)](ChatSessionHost &host) -> std::string {
+	return [net = std::move(net), slug = std::move(slug), keep_alive](ChatSessionHost &host) -> std::string {
 		const HttpHeaders json_headers = {{"Accept", "application/json"}};
 		const HttpResult channel = net.get(kick_channel_url(slug), json_headers, host.cancel());
 		if (host.stopping())
@@ -124,12 +207,19 @@ ChatSession kick_chat_session(ChatNet net, std::string slug)
 		if (!socket)
 			return "Kick chat: " + error;
 		host.attach(socket);
-		socket->send(kick_subscribe_message(*chatroom));
+		for (const std::string &subscribe : kick_subscribe_messages(*chatroom))
+			socket->send(subscribe);
+		SocketWatchdog watchdog(socket, keep_alive, std::string(kKickPing));
 
 		std::string data;
 		while (!host.stopping()) {
-			if (!socket->receive(data))
-				return host.stopping() ? std::string() : std::string("Kick closed the chat connection");
+			if (!socket->receive(data)) {
+				if (host.stopping())
+					return {};
+				return watchdog.timed_out() ? "the Kick chat went quiet; reconnecting"
+							    : "Kick closed the chat connection";
+			}
+			watchdog.heard();
 			const KickFrame frame = parse_kick_frame(data);
 			switch (frame.kind) {
 			case KickFrame::Kind::Ping:
@@ -141,6 +231,7 @@ ChatSession kick_chat_session(ChatNet net, std::string slug)
 			case KickFrame::Kind::Error:
 				return frame.message.empty() ? std::string("Kick chat error") : frame.message;
 			case KickFrame::Kind::Chat:
+			case KickFrame::Kind::Paid:
 				host.add(frame.event);
 				break;
 			case KickFrame::Kind::Other:

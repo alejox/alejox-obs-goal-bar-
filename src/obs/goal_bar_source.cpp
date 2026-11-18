@@ -56,6 +56,7 @@ constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
 constexpr const char *kKickChannelKey = "kick_channel";
 constexpr const char *kChatMinCharsKey = "chat_min_chars";
 constexpr const char *kChatNoticeKey = "chat_notice";
+constexpr const char *kPaidNoticeKey = "paid_notice";
 constexpr const char *kSupportKey = "support";
 // Bumped on every goal change made by the plugin itself (provider reading,
 // auto next goal, reset). A settings object with an older revision is a stale
@@ -746,7 +747,8 @@ void fill_metric_list(obs_property_t *list, Platform platform)
 							   {Metric::Subscribers, "Metric.Subscribers"},
 							   {Metric::Followers, "Metric.Followers"},
 							   {Metric::Bits, "Metric.Bits"},
-							   {Metric::Comments, "Metric.Comments"}};
+							   {Metric::Comments, "Metric.Comments"},
+							   {Metric::PaidSubs, "Metric.PaidSubs"}};
 	for (const auto &[metric, label] : metrics) {
 		if (platform_reads(platform, metric))
 			obs_property_list_add_string(list, obs_module_text(label),
@@ -810,6 +812,7 @@ bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 				 readable && *metric == Metric::Subscribers && platform == Platform::YouTube);
 	obs_property_set_visible(obs_properties_get(props, kChatNoticeKey), readable && metric_is_counted(*metric));
 	obs_property_set_visible(obs_properties_get(props, kChatMinCharsKey), readable && *metric == Metric::Comments);
+	obs_property_set_visible(obs_properties_get(props, kPaidNoticeKey), readable && *metric == Metric::PaidSubs);
 	// Typed in manual mode; adjustable for counted metrics (the chat adds to it).
 	obs_property_set_visible(obs_properties_get(props, settings_key::kCurrent),
 				 platform == Platform::Manual || (readable && metric_is_counted(*metric)));
@@ -928,6 +931,7 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_property_t *min_chars = obs_properties_add_int(props, kChatMinCharsKey, obs_module_text("GoalBar.ChatMinChars"),
 							    1, int(kMaxChatMinChars), 1);
 	obs_property_set_long_description(min_chars, obs_module_text("GoalBar.ChatMinCharsHelp"));
+	obs_properties_add_text(props, kPaidNoticeKey, obs_module_text("GoalBar.PaidNotice"), OBS_TEXT_INFO);
 	obs_properties_add_text(props, kChatNoticeKey, obs_module_text("GoalBar.ChatNotice"), OBS_TEXT_INFO);
 	obs_properties_add_int(props, settings_key::kCurrent, obs_module_text("GoalBar.Current"), 0, INT_MAX, 1);
 	obs_properties_add_int(props, settings_key::kTarget, obs_module_text("GoalBar.Target"), 1, INT_MAX, 1);

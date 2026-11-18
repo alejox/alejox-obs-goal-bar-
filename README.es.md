@@ -32,7 +32,7 @@ Una fuente nativa de OBS (sin fuente de navegador, sin página web, sin app apar
 | ▶️ | **YouTube, modo público** | Lee los me gusta y los suscriptores del directo desde la página pública del canal (`@usuario`), sin iniciar sesión |
 | 🟣 | **Twitch** | Seguidores y suscriptores con la API oficial. Conectas tu cuenta con un código en twitch.tv/activate |
 | 🟢 | **Kick** | Seguidores y espectadores de cualquier canal, sin cuenta ni app de Kick (endpoint público no documentado, ver abajo) |
-| 💬 | **Metas del chat** | **Comentarios** (YouTube, Twitch, Kick) con un mínimo de caracteres que eliges, y **Bits** (Twitch), contados desde el chat en vivo mientras OBS está abierto |
+| 💬 | **Metas del chat** | **Comentarios** (YouTube, Twitch, Kick) con un mínimo de caracteres que eliges, **Bits** (Twitch) y **Suscripciones de pago** (membresías de YouTube, suscripciones de Kick), contados desde el chat en vivo mientras OBS está abierto |
 | ✍️ | **Modo manual** | Escribes el valor actual a mano; siempre disponible |
 | 🎉 | **Celebración** | Al cumplir la meta: brillo y confeti sobre la barra |
 | 🎬 | **Mostrar una fuente** | Muestra una fuente de la escena (imagen, texto, audio o video). Audio y video se reproducen desde el inicio y se ocultan al terminar |
@@ -110,13 +110,14 @@ En OBS, **Ayuda → Archivos de registro → Ver registro actual** debe mostrar 
 
 Los seguidores funcionan con cualquier cuenta. Los suscriptores necesitan un canal Afiliado o Partner de Twitch; si no, la barra lo indica.
 
-### 💬 Comentarios y bits
+### 💬 Comentarios, bits y suscripciones de pago
 
-Elige la métrica **Comentarios** (YouTube, Twitch o Kick) o **Bits** (Twitch). La barra los cuenta desde el chat en vivo, igual que lo lee multi-chat:
+Elige la métrica **Comentarios** (YouTube, Twitch o Kick), **Bits** (Twitch) o **Suscripciones de pago** (YouTube o Kick). La barra los cuenta desde el chat en vivo, igual que lo lee multi-chat:
 
 - **Comentarios**: cada mensaje con al menos **Mínimo de caracteres por comentario** (5 por defecto; no cuentan los espacios del principio y del final, y cada emote o emoji cuenta como un carácter).
 - **Bits**: los bits de cada cheer del chat. No hace falta ningún permiso extra de Twitch: el chat se lee de forma anónima, así que no tienes que reconectar la cuenta.
-- Solo se cuenta lo que pasa **mientras OBS está abierto**. Al cambiar una fuente a comentarios o bits empieza en 0; cambia **Valor actual** para empezar desde otro número.
+- **Suscripciones de pago**: membresías del canal en YouTube y suscripciones en Kick. Cada nueva, cada renovación y cada regalada suma 1 (un regalo de 5 suma 5). YouTube y Kick no publican el total de suscriptores de pago, así que se cuentan desde el chat. En Twitch, **Suscriptores** ya es el total de pago (lo da la API de Twitch); en YouTube, **Suscriptores** son los gratuitos.
+- Solo se cuenta lo que pasa **mientras OBS está abierto**. Al cambiar una fuente a una de estas métricas empieza en 0; cambia **Valor actual** para empezar desde otro número (por ejemplo, tu número actual de miembros).
 - Twitch lee el chat de la cuenta conectada; YouTube el directo del `@usuario` (espera mientras el canal no está en vivo); Kick el chat del canal que escribiste.
 
 ### 🟢 Kick

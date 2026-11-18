@@ -17,6 +17,8 @@ std::string_view metric_id(Metric metric)
 		return "bits";
 	case Metric::Comments:
 		return "comments";
+	case Metric::PaidSubs:
+		return "paid_subs";
 	}
 	return "likes";
 }
@@ -24,7 +26,7 @@ std::string_view metric_id(Metric metric)
 std::optional<Metric> metric_from_id(std::string_view id)
 {
 	for (Metric metric : {Metric::Likes, Metric::Subscribers, Metric::Followers, Metric::Viewers, Metric::Bits,
-			      Metric::Comments}) {
+			      Metric::Comments, Metric::PaidSubs}) {
 		if (metric_id(metric) == id)
 			return metric;
 	}
@@ -57,19 +59,21 @@ std::optional<Platform> platform_from_id(std::string_view id)
 
 bool metric_is_counted(Metric metric)
 {
-	return metric == Metric::Bits || metric == Metric::Comments;
+	return metric == Metric::Bits || metric == Metric::Comments || metric == Metric::PaidSubs;
 }
 
 bool platform_reads(Platform platform, Metric metric)
 {
 	switch (platform) {
 	case Platform::YouTube:
-		return metric == Metric::Likes || metric == Metric::Subscribers || metric == Metric::Comments;
+		return metric == Metric::Likes || metric == Metric::Subscribers || metric == Metric::Comments ||
+		       metric == Metric::PaidSubs;
 	case Platform::Twitch:
 		return metric == Metric::Followers || metric == Metric::Subscribers || metric == Metric::Bits ||
 		       metric == Metric::Comments;
 	case Platform::Kick:
-		return metric == Metric::Followers || metric == Metric::Viewers || metric == Metric::Comments;
+		return metric == Metric::Followers || metric == Metric::Viewers || metric == Metric::Comments ||
+		       metric == Metric::PaidSubs;
 	case Platform::Manual:
 		return metric != Metric::Viewers && !metric_is_counted(metric);
 	}

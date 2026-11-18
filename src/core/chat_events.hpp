@@ -24,6 +24,7 @@ struct ChatEvent {
 	bool is_message = false; // a viewer wrote something (a comment)
 	std::size_t length = 0;  // characters of the message; each emote counts as one
 	uint64_t bits = 0;       // Twitch cheers
+	uint64_t paid_subs = 0;  // paid subscriptions it announces (YouTube memberships, Kick subs)
 };
 
 // Characters (Unicode code points) of `utf8` without leading and trailing
@@ -80,15 +81,19 @@ std::optional<ChatEvent> twitch_chat_event(const IrcLine &line);
 // ---- Kick: Pusher WebSocket ------------------------------------------------
 
 struct KickFrame {
-	enum class Kind { Other, Ping, Subscribed, Error, Chat };
+	enum class Kind { Other, Ping, Subscribed, Error, Chat, Paid };
 	Kind kind = Kind::Other;
-	ChatEvent event;     // set for Chat
+	ChatEvent event;     // set for Chat and Paid
 	std::string message; // set for Error
 };
 
 KickFrame parse_kick_frame(std::string_view frame);
 std::string kick_subscribe_message(uint64_t chatroom_id);
+// Both channels of a chatroom: chatrooms.<id>.v2 carries the chat messages,
+// chatroom_<id> the paid subscriptions (checked 2026-11-18).
+std::vector<std::string> kick_subscribe_messages(uint64_t chatroom_id);
 inline constexpr std::string_view kKickPong = R"({"event":"pusher:pong","data":{}})";
+inline constexpr std::string_view kKickPing = R"({"event":"pusher:ping","data":{}})";
 
 // The chatroom id in a GET /api/v2/channels/<slug> answer.
 std::optional<uint64_t> kick_chatroom_id(std::string_view channel_json);

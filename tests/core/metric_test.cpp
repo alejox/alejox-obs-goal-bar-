@@ -91,3 +91,17 @@ TEST_CASE(chat_metrics_by_platform)
 	CHECK(readable_metric(Platform::Kick, Metric::Bits) == Metric::Followers);
 	CHECK(readable_metric(Platform::Manual, Metric::Comments) == Metric::Likes);
 }
+
+// Paid subscriptions are counted from the chat where the platform does not
+// publish a total: YouTube memberships and Kick subscriptions. Twitch has the
+// real total (Subscribers) through its API.
+TEST_CASE(paid_subscriptions_metric)
+{
+	CHECK_EQ(std::string(metric_id(Metric::PaidSubs)), std::string("paid_subs"));
+	CHECK(metric_from_id("paid_subs") == Metric::PaidSubs);
+	CHECK(metric_is_counted(Metric::PaidSubs));
+	CHECK(platform_reads(Platform::YouTube, Metric::PaidSubs));
+	CHECK(platform_reads(Platform::Kick, Metric::PaidSubs));
+	CHECK(!platform_reads(Platform::Twitch, Metric::PaidSubs));
+	CHECK(!platform_reads(Platform::Manual, Metric::PaidSubs));
+}

@@ -6,9 +6,12 @@
 
 namespace goalbar {
 
-// Bits and Comments are counted from the live chat while the source runs;
-// the others are read from the platform as a total.
-enum class Metric { Likes, Subscribers, Followers, Viewers, Bits, Comments };
+// Bits, Comments and PaidSubs are counted from the live chat while the
+// source runs; the others are read from the platform as a total. PaidSubs are
+// YouTube memberships and Kick subscriptions (new, renewed and gifted): those
+// platforms publish no total of paid subscribers. Twitch Subscribers are the
+// paid total from its API.
+enum class Metric { Likes, Subscribers, Followers, Viewers, Bits, Comments, PaidSubs };
 
 enum class Platform { Manual, YouTube, Twitch, Kick };
 
