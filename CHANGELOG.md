@@ -3,6 +3,16 @@
 Each `## <version>` section becomes the description of that release, and the plugin's updater shows
 its items before installing (the Spanish ones when OBS is in Spanish, the English ones otherwise).
 
+## 0.1.8
+
+### Español
+
+- El aviso de actualización ahora muestra qué trae la versión nueva, en el idioma de OBS.
+
+### English
+
+- The update notice now shows what the new version brings, in OBS's language.
+
 ## 0.1.7
 
 ### Español
