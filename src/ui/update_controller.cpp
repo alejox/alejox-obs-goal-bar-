@@ -1,5 +1,6 @@
 #include "ui/update_controller.hpp"
 
+#include "update/update_check.hpp"
 #include "update/update_settings_file.hpp"
 
 // obs-module.h before plugin-support.h: the other order redefines blogva on MSVC.
@@ -12,11 +13,14 @@
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QVBoxLayout>
 
 #include <chrono>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace goalbar::ui {
 namespace {
@@ -172,6 +176,20 @@ void UpdateController::offer(bool installable)
 				  .arg(QString::fromStdString(state.version).toHtmlEscaped(),
 				       QString::fromUtf8(PLUGIN_VERSION).toHtmlEscaped());
 	message += QStringLiteral("<br>") + link(state.release_url, text("Update.ReleaseNotes"));
+	// What the new version brings, as its release describes it, in the language OBS uses.
+	const bool spanish = QString::fromUtf8(obs_get_locale()).startsWith(QStringLiteral("es"));
+	const std::vector<std::string> items = update::release_note_items(state.notes, spanish);
+	if (!items.empty()) {
+		message += QStringLiteral("<br><br><b>%1</b><ul style=\"margin-left: 0; -qt-list-indent: 1;\">")
+				   .arg(text("Update.WhatsNew").toHtmlEscaped());
+		static const QRegularExpression bold(QStringLiteral("\\*\\*(.+?)\\*\\*"));
+		for (const std::string &item : items) {
+			QString line = QString::fromStdString(item).toHtmlEscaped();
+			line.replace(bold, QStringLiteral("<b>\\1</b>"));
+			message += QStringLiteral("<li>") + line + QStringLiteral("</li>");
+		}
+		message += QStringLiteral("</ul>");
+	}
 	if (!installable) {
 		message += QStringLiteral("<br><br>") + text("Update.ManualOnly").toHtmlEscaped();
 	}

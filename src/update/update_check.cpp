@@ -4,6 +4,7 @@
 
 #include <json.hpp>
 
+#include <cctype>
 #include <limits>
 
 namespace goalbar::update {
@@ -163,6 +164,46 @@ std::optional<std::string> parse_sha256_digest(std::string_view digest)
 	return hex;
 }
 
+std::vector<std::string> release_note_items(std::string_view notes, bool spanish, std::size_t max_items)
+{
+	std::vector<std::string> es, en, plain;
+	std::vector<std::string> *current = &plain;
+	while (!notes.empty()) {
+		const std::size_t end = notes.find('\n');
+		std::string_view line = notes.substr(0, end);
+		notes = end == std::string_view::npos ? std::string_view() : notes.substr(end + 1);
+		if (!line.empty() && line.back() == '\r')
+			line.remove_suffix(1);
+		if (!line.empty() && line.front() == '#') {
+			std::string title;
+			for (char c : line.substr(line.find_first_not_of("# ") == std::string_view::npos
+							  ? line.size()
+							  : line.find_first_not_of("# ")))
+				title += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			current = title.rfind("espa", 0) == 0 ? &es : title.rfind("engl", 0) == 0 ? &en : &plain;
+			continue;
+		}
+		// Top-level items only: nested ones ("  - ...") are details of the item above.
+		if (line.size() > 2 && (line.substr(0, 2) == "- " || line.substr(0, 2) == "* ")) {
+			std::string_view item = line.substr(2);
+			while (!item.empty() && item.front() == ' ')
+				item.remove_prefix(1);
+			while (!item.empty() && item.back() == ' ')
+				item.remove_suffix(1);
+			if (!item.empty())
+				current->emplace_back(item);
+		}
+	}
+	std::vector<std::string> items = spanish ? es : en;
+	if (items.empty())
+		items = spanish ? en : es;
+	if (items.empty())
+		items = plain;
+	if (items.size() > max_items)
+		items.resize(max_items);
+	return items;
+}
+
 std::optional<ReleaseInfo> parse_latest_release(std::string_view json_text)
 {
 	try {
@@ -178,6 +219,7 @@ std::optional<ReleaseInfo> parse_latest_release(std::string_view json_text)
 		release.html_url = text_field(parsed, "html_url");
 		release.draft = bool_field(parsed, "draft");
 		release.prerelease = bool_field(parsed, "prerelease");
+		release.notes = text_field(parsed, "body");
 
 		const auto assets = parsed.find("assets");
 		if (assets != parsed.end() && assets->is_array()) {

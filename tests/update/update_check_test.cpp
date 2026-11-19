@@ -102,6 +102,44 @@ TEST_CASE(parse_latest_release_reads_tag_url_and_assets)
 	CHECK(release->assets[2].sha256.empty());
 }
 
+TEST_CASE(parse_latest_release_reads_the_description)
+{
+	const auto release = parse_latest_release(R"({"tag_name":"v0.1.8","body":"### Español\n\n- uno"})");
+	REQUIRE(release.has_value());
+	CHECK_EQ(release->notes, "### Español\n\n- uno");
+	CHECK(parse_latest_release(R"({"tag_name":"v0.1.8"})")->notes.empty());
+}
+
+// The release description, written like CHANGELOG.md, as the update dialog lists it.
+TEST_CASE(release_note_items_pick_the_language)
+{
+	const std::string notes = "### Español\n\n- **Kick:** ya no da error.\n- Uno más.\n\n"
+				  "### English\n\n- **Kick:** no more error.\n- One more.\n\n"
+				  "## Downloads\n| a | b |\n";
+	const auto es = release_note_items(notes, true);
+	REQUIRE(es.size() == 2);
+	CHECK_EQ(es[0], "**Kick:** ya no da error.");
+	const auto en = release_note_items(notes, false);
+	REQUIRE(en.size() == 2);
+	CHECK_EQ(en[1], "One more.");
+}
+
+TEST_CASE(release_note_items_fall_back_and_limit)
+{
+	// Only English: Spanish users see it too.
+	CHECK_EQ(release_note_items("### English\n- only english\n", true).size(), static_cast<std::size_t>(1));
+	// Older descriptions without language headings: their top-level items, not the nested ones.
+	const auto plain = release_note_items("## What's new\n- **A** one\n  - nested\n* two\n", true);
+	REQUIRE(plain.size() == 2);
+	CHECK_EQ(plain[1], "two");
+	std::string many = "### English\n";
+	for (int i = 0; i < 12; ++i)
+		many += "- item\n";
+	CHECK_EQ(release_note_items(many, false).size(), static_cast<std::size_t>(8));
+	CHECK(release_note_items("", false).empty());
+	CHECK(release_note_items("Just text.", false).empty());
+}
+
 TEST_CASE(parse_latest_release_survives_bad_input)
 {
 	CHECK(!parse_latest_release("not json").has_value());

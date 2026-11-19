@@ -5,7 +5,6 @@
 !/cmake
 !/data
 !/docs
-!/odd
 !/src
 !/tests
 !/.github
@@ -16,6 +15,8 @@
 !/LICENSE
 !/README.md
 !/README.en.md
+!/README.es.md
+!/CHANGELOG.md
 
 # Exclude macOS resource forks
 .DS_Store

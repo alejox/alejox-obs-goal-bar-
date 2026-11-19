@@ -224,7 +224,7 @@ void UpdateService::check(bool network)
 	}
 	ready_.reset();
 	offer_.reset();
-	run(UpdateState{network ? UpdateStatus::Checking : UpdateStatus::Idle, {}, {}},
+	run(UpdateState{network ? UpdateStatus::Checking : UpdateStatus::Idle, {}, {}, {}},
 	    [config = config_, network](CancelToken &cancel) { return check_release(config, cancel, network); });
 }
 
@@ -234,7 +234,7 @@ void UpdateService::install()
 		return;
 	}
 	const UpdateState offered = state_;
-	run(UpdateState{UpdateStatus::Downloading, offered.version, offered.release_url},
+	run(UpdateState{UpdateStatus::Downloading, offered.version, offered.release_url, offered.notes},
 	    [config = config_, asset = *offer_, offered](CancelToken &cancel) {
 		    return download_and_stage(config, asset, offered, cancel);
 	    });
@@ -321,7 +321,7 @@ UpdateService::Outcome UpdateService::check_release(const UpdateServiceConfig &c
 
 	const std::string release_url =
 		is_trusted_release_page(release->html_url) ? release->html_url : std::string(kReleasesPageUrl);
-	const UpdateState manual{UpdateStatus::Manual, decision.version, release_url};
+	const UpdateState manual{UpdateStatus::Manual, decision.version, release_url, release->notes};
 	if (decision.verdict == UpdateVerdict::NoPackage || !config.platform) {
 		obs_log(LOG_INFO, "update %s has no package for this platform", decision.version.c_str());
 		outcome.state = manual;
@@ -356,7 +356,7 @@ UpdateService::Outcome UpdateService::check_release(const UpdateServiceConfig &c
 
 	obs_log(LOG_INFO, "update %s is available (running %s)", decision.version.c_str(),
 		config.current_version.c_str());
-	outcome.state = {UpdateStatus::Available, decision.version, release_url};
+	outcome.state = {UpdateStatus::Available, decision.version, release_url, release->notes};
 	outcome.offer = asset;
 	return outcome;
 }
