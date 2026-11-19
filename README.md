@@ -244,7 +244,7 @@ AC Goal Bar is free and will stay free. If it saves you time on your streams, yo
 
 ## 🤖 How this plugin is made
 
-AC Goal Bar is developed with the help of an AI coding assistant (Anthropic Claude, via Claude Code), directed by the maintainer: a large part of the code was written with it. AI was used to write and modify the C++ plugin code and its tests, the build and release workflows, and the documentation, including this README. Alejandro (Alejoxgaming) designs the features, reviews the changes, tests every release in OBS on his own streams on Windows, macOS and Linux, decides what ships and maintains the project.
+AC Goal Bar is developed with the help of an AI coding assistant (Anthropic Claude, via Claude Code), directed by the maintainer: a part of the code was written with it. AI was used to write and modify the C++ plugin code and its tests, the build and release workflows, and the documentation, including this README. Alejandro (Alejoxgaming) designs the features, reviews the changes, tests every release in OBS on his own streams on Windows, macOS and Linux, decides what ships and maintains the project.
 
 If you find a bug, please [open an issue](../../issues): every report is read and answered by a person.
 
