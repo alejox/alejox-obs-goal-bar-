@@ -30,6 +30,8 @@ struct UpdateState {
 	std::string version;
 	// The release page, for Available and Manual (already checked to be this project's).
 	std::string release_url;
+	// The release description (Markdown), for Available and Manual.
+	std::string notes;
 };
 
 } // namespace goalbar::update

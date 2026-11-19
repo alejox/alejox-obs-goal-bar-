@@ -3,7 +3,8 @@ name: Release
 # Publishes a GitHub Release with the macOS, Windows and Linux packages built by build.yml.
 # Runs when a change to "version" in buildspec.json reaches main, when a v<version> tag is
 # pushed, or by hand (Actions → Release → Run workflow). The tag is always v<version>; if it
-# already exists, nothing is published. The notes come from .github/release-notes/v<version>.md.
+# already exists, nothing is published. The notes are the "## <version>" section of CHANGELOG.md
+# (the plugin's updater lists its items before installing), followed by the download table.
 on:
   push:
     branches: [main]
@@ -27,7 +28,7 @@ jobs:
         run: |
           tag="v$(python3 -c "import json; print(json.load(open('buildspec.json'))['version'])")"
           echo "name=$tag" >> "$GITHUB_OUTPUT"
-          test -f ".github/release-notes/$tag.md" || { echo "Missing .github/release-notes/$tag.md"; exit 1; }
+          grep -qx "## ${tag#v}" CHANGELOG.md || { echo "CHANGELOG.md has no '## ${tag#v}' section"; exit 1; }
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             [ "$tag" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME but buildspec.json says $tag"; exit 1; }
             echo "publish=true" >> "$GITHUB_OUTPUT"
@@ -73,5 +74,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "AC Goal Bar $TAG" \
-            --notes-file ".github/release-notes/$TAG.md"
+          version="${TAG#v}"
+          awk -v v="## $version" '$0==v{on=1;next} /^## /{on=0} on' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ## Downloads
+          | Platform | File | Install to |
+          | --- | --- | --- |
+          | macOS (Apple Silicon, 13+) | \`obs-goal-bar-$version-macos-arm64.zip\` | \`~/Library/Application Support/obs-studio/plugins/\` |
+          | Windows x64 | \`obs-goal-bar-$version-windows-x64.zip\` | \`C:\\ProgramData\\obs-studio\\plugins\\\` |
+          | Linux x86_64 | \`obs-goal-bar-$version-linux-x86_64.tar.gz\` | \`~/.config/obs-studio/plugins/\` |
+
+          The macOS bundle is ad-hoc signed; if macOS blocks it, run \`xattr -dr com.apple.quarantine\` on the installed \`.plugin\` (see README). All three packages are built and unit-tested in CI from the same commit.
+          EOF
+          gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "AC Goal Bar $TAG" --notes-file notes.md

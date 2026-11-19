@@ -59,10 +59,18 @@ struct ReleaseInfo {
 	bool draft = false;
 	bool prerelease = false;
 	std::vector<ReleaseAsset> assets;
+	std::string notes; // the release description (Markdown), empty if it has none
 };
 
 // A GET /repos/{owner}/{repo}/releases/latest response; nullopt when it has no tag.
 std::optional<ReleaseInfo> parse_latest_release(std::string_view json);
+
+// What a release brings, for the update dialog, from a description written
+// like CHANGELOG.md: "### Español" and "### English" headings, each followed by
+// "- item" lines. `spanish` picks the section (the other one when it is
+// missing); a description without those headings gives its top-level items.
+// At most `max_items`; the items keep their Markdown (e.g. **bold**).
+std::vector<std::string> release_note_items(std::string_view notes, bool spanish, std::size_t max_items = 8);
 
 enum class UpdatePlatform { MacosArm64, WindowsX64, LinuxX86_64 };
 
