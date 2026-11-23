@@ -88,3 +88,11 @@ jobs:
           The macOS bundle is ad-hoc signed; if macOS blocks it, run \`xattr -dr com.apple.quarantine\` on the installed \`.plugin\` (see README). All three packages are built and unit-tested in CI from the same commit.
           EOF
           gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "AC Goal Bar $TAG" --notes-file notes.md
+      # alejoxcode.com reads the latest release when it builds its pages (every hour and on each
+      # deploy): redeploying it right away shows the new version and downloads at once.
+      - name: Update alejoxcode.com
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          [ -n "$VERCEL_DEPLOY_HOOK" ] || { echo "No VERCEL_DEPLOY_HOOK secret: skipped"; exit 0; }
+          curl -fsS -X POST "$VERCEL_DEPLOY_HOOK"
