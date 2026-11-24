@@ -39,4 +39,17 @@ ChatSession kick_chat_session(ChatNet net, std::string slug, ChatKeepAlive keep_
 // normalize_youtube_channel).
 ChatSession youtube_chat_session(ChatNet net, std::string channel_url);
 
+struct TikTokChatTiming {
+	std::chrono::milliseconds heartbeat{std::chrono::seconds(10)};
+	std::chrono::milliseconds not_live_retry{std::chrono::seconds(30)};
+	// Euler Stream's free plan has a daily limit of connections.
+	std::chrono::milliseconds sign_limit_wait{std::chrono::minutes(10)};
+};
+
+// TikTok: the live room's chat (comments, gifts, likes), signed by Euler
+// Stream; waits as NotLive while the creator is not live. `handle` is
+// normalized; `user_agent` is the one the WebSocket sends (net::kUserAgent).
+ChatSession tiktok_chat_session(ChatNet net, std::string handle, std::string user_agent,
+				TikTokChatTiming timing = {});
+
 } // namespace goalbar

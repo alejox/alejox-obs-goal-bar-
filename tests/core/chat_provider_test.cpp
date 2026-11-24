@@ -2,6 +2,7 @@
 #include "providers/chat_sessions.hpp"
 
 #include "core/kick_api.hpp"
+#include "core/tiktok_live.hpp"
 
 #include "test_harness.hpp"
 
@@ -82,6 +83,7 @@ private:
 struct FakeNet {
 	std::shared_ptr<FakeSocket> socket;
 	std::shared_ptr<std::string> connected_url = std::make_shared<std::string>();
+	std::shared_ptr<HttpHeaders> connected_headers = std::make_shared<HttpHeaders>();
 	std::shared_ptr<std::vector<std::string>> urls = std::make_shared<std::vector<std::string>>();
 	std::shared_ptr<std::mutex> mutex = std::make_shared<std::mutex>();
 	std::function<HttpResult(const std::string &)> answer_get = [](const std::string &) { return HttpResult{}; };
@@ -106,9 +108,10 @@ struct FakeNet {
 			}
 			return answer_post(url, body);
 		};
-		out.connect = [*this](const std::string &url, const HttpHeaders &, std::string &) {
+		out.connect = [*this](const std::string &url, const HttpHeaders &headers, std::string &) {
 			std::lock_guard lock(*mutex);
 			*connected_url = url;
+			*connected_headers = headers;
 			return std::static_pointer_cast<ChatSocket>(socket);
 		};
 		return out;
@@ -355,4 +358,195 @@ TEST_CASE(quiet_twitch_chat_is_pinged_then_reconnected)
 	});
 	CHECK_EQ(reading.message, std::string("the Twitch chat went quiet; reconnecting"));
 	CHECK(fake.socket->sent_contains("PING :tmi.twitch.tv"));
+}
+
+// ---- TikTok -----------------------------------------------------------------
+
+namespace {
+
+constexpr const char *kTikTokLiveRoom =
+	R"({"data":{"user":{"uniqueId":"creator","roomId":"7441234567890123456"},"stats":{"followerCount":900},)"
+	R"("liveRoom":{"status":2,"liveRoomStats":{"userCount":55}}},"message":"","statusCode":0})";
+constexpr const char *kTikTokOfflineRoom =
+	R"({"data":{"user":{"uniqueId":"creator","roomId":"7441234567890123456"},"stats":{"followerCount":900},)"
+	R"("liveRoom":{"status":4}},"message":"","statusCode":0})";
+constexpr const char *kPushServer = "wss://webcast-ws.tiktok.com/webcast/im/ws_proxy/ws_reuse_supplement/";
+
+std::string tiktok_sign_answer()
+{
+	ProtoWriter route;
+	route.bytes(1, "cursor").bytes(2, "c1");
+	return ProtoWriter().bytes(7, route.data()).bytes(10, kPushServer).data();
+}
+
+std::string tiktok_event(std::string_view method, const std::string &payload)
+{
+	return ProtoWriter().bytes(1, method).bytes(2, payload).data();
+}
+
+// One "msg" frame carrying `events`; it asks for an ack.
+std::string tiktok_msg(const std::vector<std::string> &events, uint64_t log_id)
+{
+	ProtoWriter fetch;
+	for (const std::string &event : events)
+		fetch.bytes(1, event);
+	fetch.bytes(5, "ext").varint(9, 1);
+	return ProtoWriter().varint(2, log_id).bytes(6, "pb").bytes(7, "msg").bytes(8, fetch.data()).data();
+}
+
+std::string tiktok_comment(std::string_view text)
+{
+	return tiktok_event("WebcastChatMessage", ProtoWriter().bytes(3, text).data());
+}
+
+std::string tiktok_gift(uint64_t diamonds, uint64_t repeat)
+{
+	return tiktok_event("WebcastGiftMessage",
+			    ProtoWriter()
+				    .varint(5, repeat)
+				    .varint(9, 1)
+				    .bytes(15, ProtoWriter().varint(11, 1).varint(12, diamonds).data())
+				    .data());
+}
+
+std::string tiktok_likes(uint64_t total)
+{
+	return tiktok_event("WebcastLikeMessage", ProtoWriter().varint(2, 3).varint(3, total).data());
+}
+
+std::vector<std::string> tiktok_chat()
+{
+	return {tiktok_msg({tiktok_comment("hola a todos"), tiktok_gift(5, 3)}, 11),
+		tiktok_msg({tiktok_likes(1200), tiktok_comment("ok"), tiktok_gift(1, 1)}, 12),
+		tiktok_msg({tiktok_likes(1250)}, 13)};
+}
+
+FakeNet tiktok_net(const char *room, HttpResult sign)
+{
+	FakeNet fake;
+	fake.answer_get = [room, sign](const std::string &url) {
+		if (url.rfind("https://www.tiktok.com/api-live/user/room/", 0) == 0)
+			return HttpResult{200, room, ""};
+		if (url.rfind("https://api.eulerstream.com/webcast/rooms/7441234567890123456/connect?", 0) == 0)
+			return sign;
+		return HttpResult{404, "", ""};
+	};
+	return fake;
+}
+
+const TikTokChatTiming kFastTikTok{std::chrono::milliseconds(20), std::chrono::milliseconds(50),
+				   std::chrono::milliseconds(50)};
+
+HttpResult signed_ok()
+{
+	return HttpResult{200, tiktok_sign_answer(), "", {{"X-Set-TT-Cookie", "ttwid=abc; Path=/; Domain=tiktok.com"}}};
+}
+
+ChatSession tiktok_session(const FakeNet &fake)
+{
+	return tiktok_chat_session(fake.net(), "creator", "Test-Agent/1.0", kFastTikTok);
+}
+
+} // namespace
+
+TEST_CASE(tiktok_chat_counts_diamonds_and_acks)
+{
+	FakeNet fake = tiktok_net(kTikTokLiveRoom, signed_ok());
+	fake.socket = std::make_shared<FakeSocket>(tiktok_chat());
+	ChatCountProvider provider(Platform::TikTok, Metric::Diamonds, 0, tiktok_session(fake), nullptr);
+	const MetricReading reading = wait_for(provider, [](const MetricReading &r) { return r.value == 16u; });
+	CHECK(reading.state == ProviderState::Live);
+	CHECK_EQ(*reading.value, uint64_t{16}); // 5 × 3 + 1
+
+	// Signed with the same user agent the socket uses, and connected with TikTok's cookies.
+	CHECK((*fake.urls)[1].find("user_agent=Test-Agent%2F1.0") != std::string::npos);
+	CHECK(fake.connected_url->rfind(std::string(kPushServer) + "?cursor=c1&aid=1988", 0) == 0);
+	bool cookie = false, protocol = false;
+	for (const auto &[name, value] : *fake.connected_headers) {
+		cookie |= name == "Cookie" && value == "tt-target-idc=useast1a; ttwid=abc";
+		protocol |= name == "Sec-WebSocket-Protocol" && value == "echo-protocol";
+	}
+	CHECK(cookie);
+	CHECK(protocol);
+
+	const auto sent = [&] { return fake.socket->sent_binary(); };
+	wait_for(provider, [&](const MetricReading &) { return sent().size() >= 5; });
+	const std::vector<std::string> frames = sent();
+	CHECK_EQ(frames.front(), tiktok_enter_room_frame(7441234567890123456ULL));
+	int acks = 0, beats = 0;
+	for (const std::string &frame : frames) {
+		const TikTokFrame parsed = parse_tiktok_frame(frame);
+		acks += parsed.type == "ack";
+		beats += parsed.type == "hb";
+		if (parsed.type == "ack")
+			CHECK_EQ(parsed.payload, std::string("ext"));
+	}
+	CHECK_EQ(acks, 3);
+	CHECK(beats >= 1);
+}
+
+TEST_CASE(tiktok_chat_counts_comments_and_room_likes)
+{
+	FakeNet fake = tiktok_net(kTikTokLiveRoom, signed_ok());
+	fake.socket = std::make_shared<FakeSocket>(tiktok_chat());
+	ChatCountProvider comments(Platform::TikTok, Metric::Comments, 3, tiktok_session(fake), nullptr);
+	CHECK(wait_for(comments, [](const MetricReading &r) { return r.value == 1u; }).value == 1u); // "ok" is short
+
+	FakeNet fake2 = tiktok_net(kTikTokLiveRoom, signed_ok());
+	fake2.socket = std::make_shared<FakeSocket>(tiktok_chat());
+	ChatCountProvider likes(Platform::TikTok, Metric::Likes, 0, tiktok_session(fake2), nullptr);
+	CHECK(!likes.latest().value.has_value() || likes.latest().value == 1200u || likes.latest().value == 1250u);
+	CHECK(wait_for(likes, [](const MetricReading &r) { return r.value == 1250u; }).value == 1250u);
+}
+
+TEST_CASE(tiktok_chat_waits_while_not_live)
+{
+	FakeNet fake = tiktok_net(kTikTokOfflineRoom, signed_ok());
+	fake.socket = std::make_shared<FakeSocket>(tiktok_chat());
+	ChatCountProvider provider(Platform::TikTok, Metric::Diamonds, 0, tiktok_session(fake), nullptr);
+	const MetricReading reading =
+		wait_for(provider, [](const MetricReading &r) { return r.state == ProviderState::NotLive; });
+	CHECK(reading.state == ProviderState::NotLive);
+	CHECK(fake.connected_url->empty());
+	std::lock_guard lock(*fake.mutex);
+	for (const std::string &url : *fake.urls)
+		CHECK(url.find("eulerstream") == std::string::npos); // no sign request is spent
+}
+
+TEST_CASE(tiktok_sign_limit_is_reported)
+{
+	FakeNet fake = tiktok_net(kTikTokLiveRoom, HttpResult{429, "", ""});
+	fake.socket = std::make_shared<FakeSocket>(tiktok_chat());
+	ChatCountProvider provider(Platform::TikTok, Metric::Comments, 0, tiktok_session(fake), nullptr);
+	const MetricReading reading =
+		wait_for(provider, [](const MetricReading &r) { return r.state == ProviderState::RateLimited; });
+	CHECK(reading.state == ProviderState::RateLimited);
+	CHECK_EQ(reading.message, std::string(kTikTokSignLimit));
+	CHECK(fake.connected_url->empty());
+}
+
+TEST_CASE(tiktok_unknown_user_is_an_error)
+{
+	FakeNet fake;
+	fake.answer_get = [](const std::string &) {
+		return HttpResult{200, R"({"data":null,"message":"user_not_found","statusCode":19881007})", ""};
+	};
+	ChatCountProvider provider(Platform::TikTok, Metric::Comments, 0, tiktok_session(fake), nullptr);
+	const MetricReading reading =
+		wait_for(provider, [](const MetricReading &r) { return r.state == ProviderState::Error; });
+	CHECK_EQ(reading.message, std::string(kTikTokUserNotFound));
+}
+
+TEST_CASE(tiktok_stream_end_waits_for_the_next_live)
+{
+	FakeNet fake = tiktok_net(kTikTokLiveRoom, signed_ok());
+	fake.socket = std::make_shared<FakeSocket>(std::vector<std::string>{
+		tiktok_msg({tiktok_gift(10, 1), tiktok_event("WebcastControlMessage", ProtoWriter().varint(2, 3).data())},
+			   1)});
+	ChatCountProvider provider(Platform::TikTok, Metric::Diamonds, 0, tiktok_session(fake), nullptr);
+	const MetricReading reading = wait_for(provider, [](const MetricReading &r) {
+		return r.value == 10u && r.state == ProviderState::NotLive;
+	});
+	CHECK_EQ(*reading.value, uint64_t{10});
+	CHECK(reading.state == ProviderState::NotLive);
 }

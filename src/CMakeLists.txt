@@ -56,6 +56,7 @@ add_library(
   providers/chat_count_provider.cpp
   providers/chat_sessions.cpp
   providers/kick_provider.cpp
+  providers/tiktok_provider.cpp
   providers/twitch_account.cpp
   providers/twitch_provider.cpp
   providers/youtube_public_provider.cpp)

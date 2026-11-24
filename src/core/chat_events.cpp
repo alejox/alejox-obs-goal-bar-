@@ -154,8 +154,8 @@ void ChatTally::add(const ChatEvent &event)
 	else if (metric_ == Metric::Diamonds)
 		total_ += event.diamonds;
 	else if (metric_ == Metric::Likes && event.room_likes) {
-		// Frames can arrive out of order: the total never goes back.
-		total_ = known_ ? std::max(total_, *event.room_likes) : *event.room_likes;
+		// The latest total: a new live room starts again from zero.
+		total_ = *event.room_likes;
 		known_ = true;
 	}
 }

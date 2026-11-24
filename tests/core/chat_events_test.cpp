@@ -323,10 +323,10 @@ TEST_CASE(chat_tally_keeps_the_room_like_total)
 	total.room_likes = 1500;
 	likes.add(total);
 	CHECK(likes.value() == uint64_t{1500});
-	total.room_likes = 1400; // an older frame arriving late
-	likes.add(total);
-	CHECK(likes.value() == uint64_t{1500});
 	total.room_likes = 2100;
 	likes.add(total);
 	CHECK(likes.value() == uint64_t{2100});
+	total.room_likes = 30; // the next live starts again
+	likes.add(total);
+	CHECK(likes.value() == uint64_t{30});
 }
