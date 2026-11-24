@@ -18,7 +18,7 @@
 
 namespace goalbar {
 
-// A client WebSocket (text messages). receive() blocks until a message
+// A client WebSocket (text messages; binary ones for TikTok). receive() blocks until a message
 // arrives and returns false once the connection ends; close() may be called
 // from any thread and ends a pending receive().
 class ChatSocket {
@@ -26,6 +26,7 @@ public:
 	virtual ~ChatSocket() = default;
 	virtual bool receive(std::string &message) = 0;
 	virtual bool send(const std::string &text) = 0;
+	virtual bool send_binary(const std::string &data) = 0;
 	virtual void close() = 0;
 };
 

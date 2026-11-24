@@ -46,7 +46,8 @@ void log_provider(const std::string &message)
 
 HttpResult to_http_result(net::Response response)
 {
-	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
+	return HttpResult{response.status, std::move(response.body), std::move(response.error),
+			  std::move(response.headers)};
 }
 
 class NetChatSocket final : public ChatSocket {
@@ -57,6 +58,7 @@ public:
 		return socket_->receive(message) == net::WebSocket::Result::Message;
 	}
 	bool send(const std::string &text) override { return socket_->send(text); }
+	bool send_binary(const std::string &data) override { return socket_->send_binary(data); }
 	void close() override { socket_->close(); }
 
 private:

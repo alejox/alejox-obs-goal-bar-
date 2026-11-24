@@ -79,8 +79,14 @@ namespace goalbar::net {
                           } else if (data.length > kMaxBody) {
                               out.error = "response too large";
                           } else {
-                              out.status = (int) ((NSHTTPURLResponse *) response).statusCode;
+                              NSHTTPURLResponse *http = (NSHTTPURLResponse *) response;
+                              out.status = (int) http.statusCode;
                               out.body.assign(static_cast<const char *>(data.bytes), data.length);
+                              [http.allHeaderFields enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL *) {
+                                  if ([key isKindOfClass:[NSString class]] && [value isKindOfClass:[NSString class]])
+                                      out.headers.emplace_back(((NSString *) key).UTF8String,
+                                                               ((NSString *) value).UTF8String);
+                              }];
                           }
                           dispatch_semaphore_signal(done);
                       }];
@@ -143,6 +149,17 @@ namespace goalbar::net {
                     return false;
                 NSURLSessionWebSocketMessage *msg =
                     [[NSURLSessionWebSocketMessage alloc] initWithString:@(text.c_str())];
+                [task_ sendMessage:msg completionHandler:^(NSError *) {
+                }];
+                return true;
+            }
+
+            bool send_binary(const std::string &data) override
+            {
+                if (closed_)
+                    return false;
+                NSData *bytes = [NSData dataWithBytes:data.data() length:data.size()];
+                NSURLSessionWebSocketMessage *msg = [[NSURLSessionWebSocketMessage alloc] initWithData:bytes];
                 [task_ sendMessage:msg completionHandler:^(NSError *) {
                 }];
                 return true;

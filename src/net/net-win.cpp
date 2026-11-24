@@ -119,6 +119,46 @@ std::wstring header_block(const Headers &headers)
 	return widen(block);
 }
 
+std::string narrow(const std::wstring &w)
+{
+	if (w.empty())
+		return {};
+	const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+	std::string out(n, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), out.data(), n, nullptr, nullptr);
+	return out;
+}
+
+Headers response_headers(HINTERNET request)
+{
+	Headers out;
+	DWORD size = 0;
+	WinHttpQueryHeaders(request, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX,
+			    WINHTTP_NO_OUTPUT_BUFFER, &size, WINHTTP_NO_HEADER_INDEX);
+	if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || size == 0)
+		return out;
+	std::wstring raw(size / sizeof(wchar_t), L'\0');
+	if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX, raw.data(),
+				 &size, WINHTTP_NO_HEADER_INDEX))
+		return out;
+	raw.resize(size / sizeof(wchar_t));
+	const std::string text = narrow(raw);
+	size_t pos = text.find("\r\n"); // the first line is "HTTP/1.1 200 OK"
+	while (pos != std::string::npos) {
+		const size_t start = pos + 2;
+		pos = text.find("\r\n", start);
+		const std::string line = text.substr(start, pos == std::string::npos ? std::string::npos : pos - start);
+		const size_t colon = line.find(':');
+		if (colon == std::string::npos)
+			continue;
+		size_t value = colon + 1;
+		while (value < line.size() && line[value] == ' ')
+			++value;
+		out.emplace_back(line.substr(0, colon), line.substr(value));
+	}
+	return out;
+}
+
 int status_code(HINTERNET request)
 {
 	DWORD status = 0, size = sizeof(status);
@@ -200,6 +240,7 @@ Response perform(const wchar_t *method, const std::string &url, Headers headers,
 		return res;
 	}
 	res.status = status_code(request);
+	res.headers = response_headers(request);
 	char buffer[16384];
 	for (;;) {
 		DWORD read = 0;
@@ -259,10 +300,12 @@ public:
 
 	bool send(const std::string &text) override
 	{
-		std::lock_guard<std::mutex> lock(send_mutex_);
-		HINTERNET ws = ws_.load();
-		return ws && WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, (PVOID)text.data(),
-						  (DWORD)text.size()) == NO_ERROR;
+		return send_buffer(WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, text);
+	}
+
+	bool send_binary(const std::string &data) override
+	{
+		return send_buffer(WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE, data);
 	}
 
 	void close() override
@@ -273,6 +316,13 @@ public:
 	}
 
 private:
+	bool send_buffer(WINHTTP_WEB_SOCKET_BUFFER_TYPE type, const std::string &data)
+	{
+		std::lock_guard<std::mutex> lock(send_mutex_);
+		HINTERNET ws = ws_.load();
+		return ws && WinHttpWebSocketSend(ws, type, (PVOID)data.data(), (DWORD)data.size()) == NO_ERROR;
+	}
+
 	HINTERNET connection_;
 	std::atomic<HINTERNET> ws_;
 	std::mutex send_mutex_;

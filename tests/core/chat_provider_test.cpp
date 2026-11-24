@@ -40,6 +40,17 @@ public:
 		sent_.push_back(text);
 		return true;
 	}
+	bool send_binary(const std::string &data) override
+	{
+		std::lock_guard lock(mutex_);
+		binary_.push_back(data);
+		return true;
+	}
+	std::vector<std::string> sent_binary() const
+	{
+		std::lock_guard lock(mutex_);
+		return binary_;
+	}
 	void close() override
 	{
 		std::lock_guard lock(mutex_);
@@ -64,6 +75,7 @@ private:
 	std::condition_variable wake_;
 	std::deque<std::string> script_;
 	std::vector<std::string> sent_;
+	std::vector<std::string> binary_;
 	bool closed_ = false;
 };
 
