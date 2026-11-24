@@ -66,9 +66,9 @@ class ChatCountProvider final : public MetricProvider, private ChatSessionHost {
 public:
 	using Logger = std::function<void(const std::string &message)>;
 
-	// `metric` is Bits or Comments; a message counts as a comment with at
-	// least `min_chars` characters. The total starts at zero and the session
-	// starts at once. `retry` is the first delay after a failure.
+	// `metric` is one ChatTally reads; a message counts as a comment with at
+	// least `min_chars` characters. A counted total starts at zero (Likes
+	// unknown) and the session starts at once. `retry` is the first delay after a failure.
 	ChatCountProvider(Platform platform, Metric metric, int min_chars, ChatSession session, Logger log,
 			  std::chrono::milliseconds retry = std::chrono::seconds(5));
 	// Closes the socket, cancels HTTP in flight and joins the worker.
@@ -79,7 +79,7 @@ public:
 
 	Platform platform() const override { return platform_; }
 	Metric metric() const override { return metric_; }
-	// The value is the total counted since the provider started.
+	// The value is the total counted since the provider started (Likes: the room's).
 	MetricReading latest() const override;
 
 private:

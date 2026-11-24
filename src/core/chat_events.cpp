@@ -151,6 +151,20 @@ void ChatTally::add(const ChatEvent &event)
 		total_ += event.paid_subs;
 	else if (metric_ == Metric::Comments && counts_as_comment(event, min_chars_))
 		++total_;
+	else if (metric_ == Metric::Diamonds)
+		total_ += event.diamonds;
+	else if (metric_ == Metric::Likes && event.room_likes) {
+		// Frames can arrive out of order: the total never goes back.
+		total_ = known_ ? std::max(total_, *event.room_likes) : *event.room_likes;
+		known_ = true;
+	}
+}
+
+std::optional<uint64_t> ChatTally::value() const
+{
+	if (metric_ == Metric::Likes && !known_)
+		return std::nullopt;
+	return total_;
 }
 
 uint64_t CountCursor::take(uint64_t total)

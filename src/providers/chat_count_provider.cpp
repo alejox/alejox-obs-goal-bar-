@@ -17,7 +17,7 @@ ChatCountProvider::ChatCountProvider(Platform platform, Metric metric, int min_c
 	  retry_(retry),
 	  tally_(metric, min_chars)
 {
-	reading_.value = 0;
+	reading_.value = tally_.value();
 	reading_.state = ProviderState::Connecting;
 	worker_ = std::thread([this] { run(); });
 }
@@ -64,7 +64,7 @@ void ChatCountProvider::add(const ChatEvent &event)
 {
 	std::lock_guard lock(mutex_);
 	tally_.add(event);
-	reading_.value = tally_.total();
+	reading_.value = tally_.value();
 }
 
 bool ChatCountProvider::stopping() const

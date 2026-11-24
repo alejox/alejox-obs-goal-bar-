@@ -25,6 +25,8 @@ struct ChatEvent {
 	std::size_t length = 0;  // characters of the message; each emote counts as one
 	uint64_t bits = 0;       // Twitch cheers
 	uint64_t paid_subs = 0;  // paid subscriptions it announces (YouTube memberships, Kick subs)
+	uint64_t diamonds = 0;   // what a TikTok gift is worth
+	std::optional<uint64_t> room_likes; // the TikTok live room's total likes so far
 };
 
 // Characters (Unicode code points) of `utf8` without leading and trailing
@@ -35,17 +37,20 @@ std::size_t chat_text_length(std::string_view utf8);
 // (and never when it is empty).
 bool counts_as_comment(const ChatEvent &event, int min_chars);
 
-// Running total of a counted metric for one chat session.
+// Running total of a metric read from a chat. Counted metrics start at zero
+// and add up; Likes (TikTok) are the room's total, unknown until the chat
+// tells it.
 class ChatTally {
 public:
 	ChatTally(Metric metric, int min_chars) : metric_(metric), min_chars_(min_chars) {}
 	void add(const ChatEvent &event);
-	uint64_t total() const { return total_; }
+	std::optional<uint64_t> value() const;
 
 private:
 	Metric metric_;
 	int min_chars_;
 	uint64_t total_ = 0;
+	bool known_ = false; // Likes: a total arrived
 };
 
 // Hands out only what a provider's running total added since the last call.

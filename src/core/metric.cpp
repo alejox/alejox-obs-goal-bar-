@@ -19,6 +19,8 @@ std::string_view metric_id(Metric metric)
 		return "comments";
 	case Metric::PaidSubs:
 		return "paid_subs";
+	case Metric::Diamonds:
+		return "diamonds";
 	}
 	return "likes";
 }
@@ -26,7 +28,7 @@ std::string_view metric_id(Metric metric)
 std::optional<Metric> metric_from_id(std::string_view id)
 {
 	for (Metric metric : {Metric::Likes, Metric::Subscribers, Metric::Followers, Metric::Viewers, Metric::Bits,
-			      Metric::Comments, Metric::PaidSubs}) {
+			      Metric::Comments, Metric::PaidSubs, Metric::Diamonds}) {
 		if (metric_id(metric) == id)
 			return metric;
 	}
@@ -44,13 +46,15 @@ std::string_view platform_id(Platform platform)
 		return "twitch";
 	case Platform::Kick:
 		return "kick";
+	case Platform::TikTok:
+		return "tiktok";
 	}
 	return "manual";
 }
 
 std::optional<Platform> platform_from_id(std::string_view id)
 {
-	for (Platform platform : {Platform::Manual, Platform::YouTube, Platform::Twitch, Platform::Kick}) {
+	for (Platform platform : {Platform::Manual, Platform::YouTube, Platform::Twitch, Platform::Kick, Platform::TikTok}) {
 		if (platform_id(platform) == id)
 			return platform;
 	}
@@ -59,7 +63,13 @@ std::optional<Platform> platform_from_id(std::string_view id)
 
 bool metric_is_counted(Metric metric)
 {
-	return metric == Metric::Bits || metric == Metric::Comments || metric == Metric::PaidSubs;
+	return metric == Metric::Bits || metric == Metric::Comments || metric == Metric::PaidSubs ||
+	       metric == Metric::Diamonds;
+}
+
+bool metric_from_chat(Platform platform, Metric metric)
+{
+	return metric_is_counted(metric) || (platform == Platform::TikTok && metric == Metric::Likes);
 }
 
 bool platform_reads(Platform platform, Metric metric)
@@ -74,6 +84,9 @@ bool platform_reads(Platform platform, Metric metric)
 	case Platform::Kick:
 		return metric == Metric::Followers || metric == Metric::Viewers || metric == Metric::Comments ||
 		       metric == Metric::PaidSubs;
+	case Platform::TikTok:
+		return metric == Metric::Followers || metric == Metric::Viewers || metric == Metric::Likes ||
+		       metric == Metric::Comments || metric == Metric::Diamonds;
 	case Platform::Manual:
 		return metric != Metric::Viewers && !metric_is_counted(metric);
 	}
@@ -87,6 +100,7 @@ Metric readable_metric(Platform platform, Metric metric)
 	switch (platform) {
 	case Platform::Twitch:
 	case Platform::Kick:
+	case Platform::TikTok:
 		return Metric::Followers;
 	default:
 		return Metric::Likes;

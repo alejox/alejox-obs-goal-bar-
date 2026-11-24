@@ -105,3 +105,32 @@ TEST_CASE(paid_subscriptions_metric)
 	CHECK(!platform_reads(Platform::Twitch, Metric::PaidSubs));
 	CHECK(!platform_reads(Platform::Manual, Metric::PaidSubs));
 }
+
+// TikTok: followers and viewers from its room endpoint; likes (the room's
+// total), comments and diamonds (gifts) from its live chat.
+TEST_CASE(tiktok_metrics)
+{
+	CHECK_EQ(std::string(platform_id(Platform::TikTok)), std::string("tiktok"));
+	CHECK(platform_from_id("tiktok") == Platform::TikTok);
+	CHECK_EQ(std::string(metric_id(Metric::Diamonds)), std::string("diamonds"));
+	CHECK(metric_from_id("diamonds") == Metric::Diamonds);
+	CHECK(metric_is_counted(Metric::Diamonds));
+
+	for (Metric metric : {Metric::Followers, Metric::Viewers, Metric::Likes, Metric::Comments, Metric::Diamonds})
+		CHECK(platform_reads(Platform::TikTok, metric));
+	CHECK(!platform_reads(Platform::TikTok, Metric::Subscribers));
+	CHECK(!platform_reads(Platform::TikTok, Metric::Bits));
+	CHECK(!platform_reads(Platform::TikTok, Metric::PaidSubs));
+	CHECK(!platform_reads(Platform::YouTube, Metric::Diamonds));
+	CHECK(!platform_reads(Platform::Manual, Metric::Diamonds));
+	CHECK(readable_metric(Platform::TikTok, Metric::Subscribers) == Metric::Followers);
+
+	// Likes on TikTok come from the chat but are a total, not counted.
+	CHECK(metric_from_chat(Platform::TikTok, Metric::Likes));
+	CHECK(!metric_is_counted(Metric::Likes));
+	CHECK(!metric_from_chat(Platform::YouTube, Metric::Likes));
+	CHECK(metric_from_chat(Platform::TikTok, Metric::Diamonds));
+	CHECK(metric_from_chat(Platform::Kick, Metric::Comments));
+	CHECK(!metric_from_chat(Platform::TikTok, Metric::Followers));
+	CHECK(!metric_from_chat(Platform::TikTok, Metric::Viewers));
+}

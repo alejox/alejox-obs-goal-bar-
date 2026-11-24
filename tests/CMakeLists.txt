@@ -60,6 +60,7 @@ add_core_test(kick_api_test core/kick_api_test.cpp)
 add_core_test(kick_provider_test core/kick_provider_test.cpp)
 target_link_libraries(kick_provider_test PRIVATE goal-bar-providers)
 add_core_test(chat_events_test core/chat_events_test.cpp)
+add_core_test(tiktok_live_test core/tiktok_live_test.cpp)
 add_core_test(chat_provider_test core/chat_provider_test.cpp)
 target_link_libraries(chat_provider_test PRIVATE goal-bar-providers)
 

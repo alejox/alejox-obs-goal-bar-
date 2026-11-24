@@ -37,6 +37,7 @@ add_library(
   core/sha256.cpp
   core/style_preset.cpp
   core/subscriber_rounding.cpp
+  core/tiktok_live.cpp
   core/twitch_auth.cpp
   core/twitch_helix.cpp
   core/version.cpp
