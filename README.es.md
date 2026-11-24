@@ -2,7 +2,7 @@
 
 # 🎯 AC Goal Bar
 
-**Una barra de progreso para OBS Studio que avanza en vivo hacia tu meta en YouTube, Twitch o Kick (me gusta, suscriptores, seguidores, espectadores, comentarios o bits) y celebra cuando la alcanzas.**
+**Una barra de progreso para OBS Studio que avanza en vivo hacia tu meta en YouTube, Twitch, Kick o TikTok (me gusta, suscriptores, seguidores, espectadores, comentarios, bits o diamantes) y celebra cuando la alcanzas.**
 
 [![Última versión](https://img.shields.io/github/v/release/alejox/alejox-obs-goal-bar-?label=versi%C3%B3n&color=ff3d6e)](../../releases/latest)
 ![macOS](https://img.shields.io/badge/macOS-13%2B%20Apple%20Silicon-000000?logo=apple&logoColor=white)
@@ -22,7 +22,7 @@
 
 ---
 
-Una fuente nativa de OBS (sin fuente de navegador, sin página web, sin app aparte). YouTube y Kick no necesitan cuenta ni claves; Twitch se conecta una vez con un código.
+Una fuente nativa de OBS (sin fuente de navegador, sin página web, sin app aparte). YouTube, Kick y TikTok no necesitan cuenta ni claves; Twitch se conecta una vez con un código.
 
 ## ✨ Qué incluye
 
@@ -32,7 +32,8 @@ Una fuente nativa de OBS (sin fuente de navegador, sin página web, sin app apar
 | ▶️ | **YouTube, modo público** | Lee los me gusta y los suscriptores del directo desde la página pública del canal (`@usuario`), sin iniciar sesión |
 | 🟣 | **Twitch** | Seguidores y suscriptores con la API oficial. Conectas tu cuenta con un código en twitch.tv/activate |
 | 🟢 | **Kick** | Seguidores y espectadores de cualquier canal, sin cuenta ni app de Kick (endpoint público no documentado, ver abajo) |
-| 💬 | **Metas del chat** | **Comentarios** (YouTube, Twitch, Kick) con un mínimo de caracteres que eliges, **Bits** (Twitch) y **Suscripciones de pago** (membresías de YouTube, suscripciones de Kick), contados desde el chat en vivo mientras OBS está abierto |
+| 🎵 | **TikTok** | Seguidores y espectadores de cualquier creador, y los me gusta, comentarios y diamantes (regalos) del directo desde su chat en vivo. Sin cuenta de TikTok (no documentado, ver abajo) |
+| 💬 | **Metas del chat** | **Comentarios** (YouTube, Twitch, Kick, TikTok) con un mínimo de caracteres que eliges, **Bits** (Twitch) y **Suscripciones de pago** (membresías de YouTube, suscripciones de Kick) y **Diamantes** (regalos de TikTok), contados desde el chat en vivo mientras OBS está abierto |
 | ✍️ | **Modo manual** | Escribes el valor actual a mano; siempre disponible |
 | 🎉 | **Celebración** | Al cumplir la meta: brillo y confeti sobre la barra |
 | 🎬 | **Mostrar una fuente** | Muestra una fuente de la escena (imagen, texto, audio o video). Audio y video se reproducen desde el inicio y se ocultan al terminar |
@@ -98,7 +99,7 @@ En OBS, **Ayuda → Archivos de registro → Ver registro actual** debe mostrar 
 ## 🚀 Uso en 5 pasos
 
 1. **Añade la fuente.** En una escena, pulsa **+** y elige **Barra de meta**.
-2. **Elige la plataforma.** **Manual**, **YouTube** (escribe tu `@usuario`), **Twitch** (pulsa **Conectar Twitch** e ingresa el código en twitch.tv/activate) o **Kick** (escribe el nombre del canal; ver abajo).
+2. **Elige la plataforma.** **Manual**, **YouTube** (escribe tu `@usuario`), **Twitch** (pulsa **Conectar Twitch** e ingresa el código en twitch.tv/activate) **Kick** (escribe el nombre del canal; ver abajo) o **TikTok** (escribe el `@usuario`; ver abajo).
 3. **Fija la meta.** Elige la métrica y escribe la **Meta**.
 4. **Decide qué pasa al cumplirla.** En **Al cumplir la meta**: animación, una fuente para mostrar y la siguiente meta automática. Pulsa **Probar celebración** para verlo.
 5. **Asigna atajos (opcional).** En **Ajustes → Atajos**, busca la fuente y asigna «Probar celebración» y «Reiniciar meta».
@@ -128,6 +129,17 @@ Métricas: **Seguidores** (disponibles en todo momento) y **Espectadores** (se m
 
 > [!WARNING]
 > Los datos de Kick vienen de un endpoint público **no documentado** (`kick.com/api/v2/channels/<canal>`), el mismo que usa la web de Kick. No forma parte de su API oficial, está detrás de Cloudflare y puede cambiar o dejar de funcionar en cualquier momento. Si Kick bloquea la solicitud, la barra muestra «Kick bloqueó la solicitud» en lugar de un valor falso.
+
+### 🎵 TikTok
+
+Elige **TikTok** y escribe el `@usuario` del creador (o pega su URL de tiktok.com). No necesitas cuenta de TikTok.
+
+- **Seguidores** (disponibles en todo momento) y **Espectadores** (mientras está en directo; si no, «Sin directo») vienen de tiktok.com y se actualizan cada 30 segundos aproximadamente.
+- **Me gusta** son el total del directo, el número que muestra TikTok. Vienen del chat en vivo, así que aparecen con el primer me gusta y empiezan de nuevo en cada directo.
+- **Comentarios** (con el mismo mínimo de caracteres) y **Diamantes** se cuentan desde el chat en vivo mientras OBS está abierto. Cada regalo suma los diamantes que vale (un regalo de 5 diamantes enviado 3 veces suma 15); un combo de regalos cuenta una vez, cuando termina.
+
+> [!WARNING]
+> TikTok no publica una API para esto. Los seguidores y espectadores vienen del endpoint que usa la propia web de tiktok.com, y el chat en vivo es el que lee su reproductor web. TikTok exige que esa conexión al chat esté firmada: la firma la da **[Euler Stream](https://www.eulerstream.com)**, un servicio gratuito y sin cuenta que recibe el ID de la sala del directo y tiene un **límite diario de conexiones**. Si se alcanza, la barra lo indica y reintenta cada 10 minutos. Todo esto puede cambiar o dejar de funcionar en cualquier momento.
 
 ## 🔄 Actualizaciones
 
@@ -176,7 +188,7 @@ Ejecuta el comando `xattr -dr com.apple.quarantine …` de los pasos de instalac
 <details>
 <summary><b>Los comentarios o los bits no cuentan</b></summary>
 
-Se cuentan desde el chat en vivo solo mientras OBS está abierto. Twitch necesita la cuenta conectada en las propiedades de la fuente; YouTube, que el canal esté en directo con el chat activado; en Kick, revisa el nombre del canal. El registro de OBS muestra líneas como `[obs-goal-bar] twitch chat comments: live` o el error que detuvo el chat.
+Se cuentan desde el chat en vivo solo mientras OBS está abierto. Twitch necesita la cuenta conectada en las propiedades de la fuente; YouTube, que el canal esté en directo con el chat activado; en Kick y TikTok, revisa el canal o el `@usuario` (TikTok además necesita que el creador esté en directo). El registro de OBS muestra líneas como `[obs-goal-bar] twitch chat comments: live` o el error que detuvo el chat.
 </details>
 
 ## 🔐 Privacidad
@@ -191,9 +203,11 @@ AC Goal Bar no tiene telemetría ni cuenta propia. Solo se conecta a los servici
 | **Twitch** (`id.twitch.tv`, `api.twitch.tv`) | Conectas Twitch | Inicio de sesión con un código en twitch.tv/activate y, después, seguidores y suscriptores de tu canal con la API oficial |
 | **Chat de Twitch** (`irc-ws.chat.twitch.tv`) | Una fuente de Twitch cuenta comentarios o bits | Lee el chat de tu canal de forma anónima y solo lectura (nunca escribe en él) |
 | **Kick** (`kick.com`, `web.kick.com` y el chat de Kick en `ws-*.pusher.com`) | Una fuente usa Kick | Lee los datos públicos del canal (seguidores, espectadores) y, en una meta de comentarios, su chat público. Sin cuenta |
+| **TikTok** (`www.tiktok.com` y el chat de TikTok en `*.tiktok.com`) | Una fuente usa TikTok | Lee los datos públicos del creador (seguidores, si está en directo, espectadores) y, para me gusta, comentarios o diamantes, el chat público del directo. Sin cuenta |
+| **Euler Stream** (`api.eulerstream.com`) | Una fuente de TikTok lee me gusta, comentarios o diamantes | Firma la conexión al chat en vivo de TikTok. Recibe el ID de la sala del directo, no tu `@usuario` ni nada sobre ti |
 | **GitHub** (`api.github.com`, `github.com`) | Al abrir OBS (como mucho una vez al día) y cuando buscas actualizaciones | Busca una versión nueva y, si aceptas, la descarga (GitHub puede servir el archivo desde sus servidores de descarga). La solicitud lleva la versión del plugin (`obs-goal-bar-updater/<versión>`) |
 
-A estos servicios solo se les envían las propias solicitudes: tu `@usuario` o nombre de canal a la plataforma que elegiste, y tu token de Twitch a Twitch.
+A estos servicios solo se les envían las propias solicitudes: tu `@usuario` o nombre de canal a la plataforma que elegiste, tu token de Twitch a Twitch y el ID de la sala del directo de TikTok a Euler Stream.
 
 **Qué guarda en tu equipo**
 
@@ -252,4 +266,4 @@ Si encuentras un fallo, [abre un issue](../../issues): cada reporte lo lee y lo 
 
 GPL-2.0 o posterior, como todo plugin que enlaza con libobs: mira [LICENSE](LICENSE).
 
-AC Goal Bar es un plugin independiente, de terceros, para OBS Studio; no tiene relación con OBS Project, YouTube, Twitch ni Kick, ni está respaldado por ellos. Los estilos «GTA 6 (Vice City)» son un diseño original inspirado en los colores del juego; no usan ilustraciones ni logotipos de Rockstar Games, y AC Goal Bar no tiene relación con Rockstar Games ni con Take-Two Interactive. Todas las marcas pertenecen a sus dueños.
+AC Goal Bar es un plugin independiente, de terceros, para OBS Studio; no tiene relación con OBS Project, YouTube, Twitch, Kick, TikTok ni Euler Stream, ni está respaldado por ellos. Los estilos «GTA 6 (Vice City)» son un diseño original inspirado en los colores del juego; no usan ilustraciones ni logotipos de Rockstar Games, y AC Goal Bar no tiene relación con Rockstar Games ni con Take-Two Interactive. Todas las marcas pertenecen a sus dueños.

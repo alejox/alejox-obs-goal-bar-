@@ -5,6 +5,7 @@
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
 #include "core/kick_api.hpp"
+#include "core/tiktok_live.hpp"
 #include "core/progress_tween.hpp"
 #include "core/style_preset.hpp"
 #include "core/subscriber_rounding.hpp"
@@ -54,6 +55,8 @@ constexpr const char *kTwitchStatusKey = "twitch_account_status";
 constexpr const char *kTwitchConnectKey = "twitch_connect";
 constexpr const char *kTwitchDisconnectKey = "twitch_disconnect";
 constexpr const char *kKickChannelKey = "kick_channel";
+constexpr const char *kTikTokChannelKey = "tiktok_channel";
+constexpr const char *kTikTokNoticeKey = "tiktok_notice";
 constexpr const char *kChatMinCharsKey = "chat_min_chars";
 constexpr const char *kChatNoticeKey = "chat_notice";
 constexpr const char *kPaidNoticeKey = "paid_notice";
@@ -80,7 +83,7 @@ constexpr const char *kIntGoalKeys[] = {settings_key::kStart, settings_key::kTar
 struct ProviderKey {
 	Platform platform = Platform::Manual;
 	Metric metric = Metric::Likes;
-	std::string channel_url; // canonical YouTube URL or Kick slug, empty when invalid
+	std::string channel_url; // canonical YouTube URL, Kick slug or TikTok handle; empty when invalid
 	int min_chars = 0;       // comments only: shortest message that counts
 
 	bool operator==(const ProviderKey &other) const
@@ -178,10 +181,13 @@ bool is_youtube_subscribers(const GoalSettings &settings)
 	return settings.platform == Platform::YouTube && settings.metric == Metric::Subscribers;
 }
 
-std::string status_text(const MetricReading &reading)
+std::string status_text(const MetricReading &reading, Platform platform)
 {
 	switch (reading.state) {
 	case ProviderState::Live:
+		// TikTok likes: live, waiting for the room's first like total.
+		if (!reading.value && platform == Platform::TikTok)
+			return obs_module_text("GoalBar.Status.WaitingLikes");
 		return reading.value ? std::string() : obs_module_text("GoalBar.Status.Hidden");
 	case ProviderState::Connecting:
 		return obs_module_text("GoalBar.Status.Connecting");
@@ -190,6 +196,8 @@ std::string status_text(const MetricReading &reading)
 	case ProviderState::AuthRequired:
 		return obs_module_text("GoalBar.Status.AuthRequired");
 	case ProviderState::RateLimited:
+		if (reading.message == kTikTokSignLimit)
+			return obs_module_text("GoalBar.Status.TikTokSignLimit");
 		return obs_module_text("GoalBar.Status.RateLimited");
 	case ProviderState::Error:
 		if (reading.message == kTwitchNeedsAffiliate)
@@ -198,6 +206,10 @@ std::string status_text(const MetricReading &reading)
 			return obs_module_text("GoalBar.Status.ChannelNotFound");
 		if (reading.message == kKickBlocked)
 			return obs_module_text("GoalBar.Status.KickBlocked");
+		if (reading.message == kTikTokUserNotFound)
+			return obs_module_text("GoalBar.Status.UserNotFound");
+		if (reading.message == kTikTokBlocked)
+			return obs_module_text("GoalBar.Status.TikTokBlocked");
 		return obs_module_text("GoalBar.Status.Error");
 	default:
 		return obs_module_text("GoalBar.Status.Error");
@@ -294,6 +306,8 @@ ProviderKey read_provider_key(obs_data_t *settings)
 		key.channel_url = normalize_youtube_channel(obs_data_get_string(settings, kChannelKey)).value_or("");
 	if (key.platform == Platform::Kick)
 		key.channel_url = normalize_kick_slug(obs_data_get_string(settings, kKickChannelKey)).value_or("");
+	if (key.platform == Platform::TikTok)
+		key.channel_url = normalize_tiktok_handle(obs_data_get_string(settings, kTikTokChannelKey)).value_or("");
 	if (key.metric == Metric::Comments)
 		key.min_chars = static_cast<int>(
 			std::clamp(obs_data_get_int(settings, kChatMinCharsKey), 1LL, kMaxChatMinChars));
@@ -310,6 +324,9 @@ std::string describe_provider(const ProviderKey &key)
 	case Platform::Kick:
 		return key.channel_url.empty() ? "Kick (no channel)"
 					       : "Kick " + key.channel_url + " " + std::string(metric_id(key.metric));
+	case Platform::TikTok:
+		return key.channel_url.empty() ? "TikTok (no user)"
+					       : "TikTok @" + key.channel_url + " " + std::string(metric_id(key.metric));
 	default:
 		return "manual";
 	}
@@ -327,7 +344,7 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 			return std::nullopt;
 		std::unique_ptr<MetricProvider> next;
 		const bool has_channel = key.platform == Platform::Twitch || !key.channel_url.empty();
-		if (metric_is_counted(key.metric)) {
+		if (metric_from_chat(key.platform, key.metric)) {
 			if (has_channel && key.platform != Platform::Manual)
 				next = make_chat_provider(key.platform, key.metric, key.min_chars, key.channel_url);
 		} else if (key.platform == Platform::YouTube && has_channel) {
@@ -336,8 +353,10 @@ std::optional<std::string> replace_provider(GoalBarSource &self, const ProviderK
 			next = make_twitch_provider(key.metric);
 		} else if (key.platform == Platform::Kick && has_channel) {
 			next = make_kick_provider(key.channel_url, key.metric);
+		} else if (key.platform == Platform::TikTok && has_channel) {
+			next = make_tiktok_provider(key.channel_url, key.metric);
 		}
-		if (key.platform == Platform::YouTube || key.platform == Platform::Kick)
+		if (key.platform == Platform::YouTube || key.platform == Platform::Kick || key.platform == Platform::TikTok)
 			status = next ? obs_module_text("GoalBar.Status.Connecting")
 				      : obs_module_text("GoalBar.Status.NoChannel");
 		if (key.platform == Platform::Twitch)
@@ -429,10 +448,10 @@ void align_subscriber_target(const GoalSettings &settings, Goal &goal, uint64_t 
 		goal.set_target(aligned);
 }
 
-void apply_reading(GoalBarSource &self, const MetricReading &reading, ReadingKind kind)
+void apply_reading(GoalBarSource &self, const MetricReading &reading, ReadingKind kind, Platform platform)
 {
 	std::lock_guard update_lock(self.update_mutex);
-	self.status = status_text(reading);
+	self.status = status_text(reading, platform);
 	const bool has_new_value =
 		reading.value && (kind == ReadingKind::Baseline || *reading.value != self.goal.goal.current);
 	if (has_new_value) {
@@ -451,10 +470,10 @@ void apply_reading(GoalBarSource &self, const MetricReading &reading, ReadingKin
 
 // Counted metrics (bits, comments): the goal grows by what the chat added
 // since the last reading, on top of the value it already had.
-void apply_count(GoalBarSource &self, const MetricReading &reading, uint64_t added)
+void apply_count(GoalBarSource &self, const MetricReading &reading, uint64_t added, Platform platform)
 {
 	std::lock_guard update_lock(self.update_mutex);
-	self.status = status_text(reading);
+	self.status = status_text(reading, platform);
 	if (added > 0) {
 		Goal &goal = self.goal.goal;
 		const uint64_t auto_next_step = self.auto_next ? self.goal.step : 0;
@@ -476,6 +495,7 @@ void poll_provider(GoalBarSource &self)
 	ReadingKind kind = ReadingKind::Update;
 	bool counted = false;
 	uint64_t added = 0;
+	Platform platform = Platform::Manual;
 	{
 		std::lock_guard lock(self.provider_mutex);
 		if (!self.provider)
@@ -486,6 +506,7 @@ void poll_provider(GoalBarSource &self)
 		self.applied_value = reading.value;
 		self.applied_state = reading.state;
 		counted = metric_is_counted(self.provider->metric());
+		platform = self.provider->platform();
 		if (counted && reading.value)
 			added = self.count_cursor.take(*reading.value);
 		if (reading.value && self.needs_baseline) {
@@ -494,9 +515,9 @@ void poll_provider(GoalBarSource &self)
 		}
 	}
 	if (counted)
-		apply_count(self, reading, added);
+		apply_count(self, reading, added, platform);
 	else
-		apply_reading(self, reading, kind);
+		apply_reading(self, reading, kind, platform);
 }
 
 // Moves to the next goal after a celebration. Returns false when there is
@@ -723,6 +744,7 @@ void goal_bar_defaults(obs_data_t *settings)
 				    std::string(platform_id(defaults.platform)).c_str());
 	obs_data_set_default_string(settings, kChannelKey, "");
 	obs_data_set_default_string(settings, kKickChannelKey, "");
+	obs_data_set_default_string(settings, kTikTokChannelKey, "");
 	obs_data_set_default_string(settings, kStyleKey, std::string(style_preset_id(StylePreset::Minimal)).c_str());
 	obs_data_set_default_int(settings, kAccentKey, kDefaultAccent);
 	obs_data_set_default_int(settings, kTextColorKey, kDefaultTextColor);
@@ -748,7 +770,8 @@ void fill_metric_list(obs_property_t *list, Platform platform)
 							   {Metric::Followers, "Metric.Followers"},
 							   {Metric::Bits, "Metric.Bits"},
 							   {Metric::Comments, "Metric.Comments"},
-							   {Metric::PaidSubs, "Metric.PaidSubs"}};
+							   {Metric::PaidSubs, "Metric.PaidSubs"},
+							   {Metric::Diamonds, "Metric.Diamonds"}};
 	for (const auto &[metric, label] : metrics) {
 		if (platform_reads(platform, metric))
 			obs_property_list_add_string(list, obs_module_text(label),
@@ -810,7 +833,10 @@ bool metric_changed(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 	const bool readable = metric && platform_reads(platform, *metric);
 	obs_property_set_visible(obs_properties_get(props, kSubsNoticeKey),
 				 readable && *metric == Metric::Subscribers && platform == Platform::YouTube);
-	obs_property_set_visible(obs_properties_get(props, kChatNoticeKey), readable && metric_is_counted(*metric));
+	const bool from_chat = readable && metric_from_chat(platform, *metric);
+	// TikTok has its own notice: likes are a total, and Euler Stream signs the chat connection.
+	obs_property_set_visible(obs_properties_get(props, kChatNoticeKey), from_chat && platform != Platform::TikTok);
+	obs_property_set_visible(obs_properties_get(props, kTikTokNoticeKey), from_chat && platform == Platform::TikTok);
 	obs_property_set_visible(obs_properties_get(props, kChatMinCharsKey), readable && *metric == Metric::Comments);
 	obs_property_set_visible(obs_properties_get(props, kPaidNoticeKey), readable && *metric == Metric::PaidSubs);
 	// Typed in manual mode; adjustable for counted metrics (the chat adds to it).
@@ -824,6 +850,7 @@ bool platform_changed(obs_properties_t *props, obs_property_t *property, obs_dat
 	const Platform platform = selected_platform(settings);
 	obs_property_set_visible(obs_properties_get(props, kChannelKey), platform == Platform::YouTube);
 	obs_property_set_visible(obs_properties_get(props, kKickChannelKey), platform == Platform::Kick);
+	obs_property_set_visible(obs_properties_get(props, kTikTokChannelKey), platform == Platform::TikTok);
 	update_twitch_account(props, platform == Platform::Twitch);
 	fill_metric_list(obs_properties_get(props, settings_key::kMetric), selected_platform(settings));
 	return metric_changed(props, property, settings);
@@ -837,7 +864,8 @@ void add_platform_list(obs_properties_t *props)
 	const std::pair<Platform, const char *> platforms[] = {{Platform::Manual, "Platform.Manual"},
 							       {Platform::YouTube, "Platform.YouTube"},
 							       {Platform::Twitch, "Platform.Twitch"},
-							       {Platform::Kick, "Platform.Kick"}};
+							       {Platform::Kick, "Platform.Kick"},
+							       {Platform::TikTok, "Platform.TikTok"}};
 	for (const auto &[platform, label] : platforms)
 		obs_property_list_add_string(list, obs_module_text(label), std::string(platform_id(platform)).c_str());
 	obs_property_set_modified_callback(list, platform_changed);
@@ -925,6 +953,7 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_properties_add_button2(props, kTwitchDisconnectKey, obs_module_text("GoalBar.Twitch.Disconnect"),
 				   twitch_disconnect_clicked, nullptr);
 	obs_properties_add_text(props, kKickChannelKey, obs_module_text("GoalBar.Kick.Channel"), OBS_TEXT_DEFAULT);
+	obs_properties_add_text(props, kTikTokChannelKey, obs_module_text("GoalBar.TikTok.Channel"), OBS_TEXT_DEFAULT);
 	obs_properties_add_text(props, kTitleKey, obs_module_text("GoalBar.Title"), OBS_TEXT_DEFAULT);
 	add_metric_list(props);
 	obs_properties_add_text(props, kSubsNoticeKey, obs_module_text("GoalBar.SubsNotice"), OBS_TEXT_INFO);
@@ -933,6 +962,7 @@ obs_properties_t *goal_bar_properties(void *data)
 	obs_property_set_long_description(min_chars, obs_module_text("GoalBar.ChatMinCharsHelp"));
 	obs_properties_add_text(props, kPaidNoticeKey, obs_module_text("GoalBar.PaidNotice"), OBS_TEXT_INFO);
 	obs_properties_add_text(props, kChatNoticeKey, obs_module_text("GoalBar.ChatNotice"), OBS_TEXT_INFO);
+	obs_properties_add_text(props, kTikTokNoticeKey, obs_module_text("GoalBar.TikTok.Notice"), OBS_TEXT_INFO);
 	obs_properties_add_int(props, settings_key::kCurrent, obs_module_text("GoalBar.Current"), 0, INT_MAX, 1);
 	obs_properties_add_int(props, settings_key::kTarget, obs_module_text("GoalBar.Target"), 1, INT_MAX, 1);
 	add_style_list(props);

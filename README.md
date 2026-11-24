@@ -2,7 +2,7 @@
 
 # 🎯 AC Goal Bar
 
-**A progress bar for OBS Studio that moves live toward your goal on YouTube, Twitch or Kick (likes, subscribers, followers, viewers, comments or bits) and celebrates when you reach it.**
+**A progress bar for OBS Studio that moves live toward your goal on YouTube, Twitch, Kick or TikTok (likes, subscribers, followers, viewers, comments, bits or diamonds) and celebrates when you reach it.**
 
 [![Latest release](https://img.shields.io/github/v/release/alejox/alejox-obs-goal-bar-?label=release&color=ff3d6e)](../../releases/latest)
 ![macOS](https://img.shields.io/badge/macOS-13%2B%20Apple%20Silicon-000000?logo=apple&logoColor=white)
@@ -22,7 +22,7 @@
 
 ---
 
-A native OBS source (no browser source, no web page, no external app). YouTube and Kick need no account or keys; Twitch connects with a one-time code.
+A native OBS source (no browser source, no web page, no external app). YouTube, Kick and TikTok need no account or keys; Twitch connects with a one-time code.
 
 ## ✨ Features
 
@@ -32,7 +32,8 @@ A native OBS source (no browser source, no web page, no external app). YouTube a
 | ▶️ | **YouTube, public mode** | Reads the live stream's likes and subscribers from the channel's public page (`@handle`), no sign-in |
 | 🟣 | **Twitch** | Followers and subscribers through the official API. Connect your account with a code on twitch.tv/activate |
 | 🟢 | **Kick** | Followers and viewers of any channel, no Kick account or app needed (undocumented public endpoint, see below) |
-| 💬 | **Chat goals** | **Comments** (YouTube, Twitch, Kick) with a minimum length you choose, **Bits** (Twitch) and **Paid subscriptions** (YouTube memberships, Kick subscriptions), counted from the live chat while OBS is open |
+| 🎵 | **TikTok** | Followers and viewers of any creator, plus the live stream's likes, comments and diamonds (gifts) from its live chat. No TikTok account (undocumented, see below) |
+| 💬 | **Chat goals** | **Comments** (YouTube, Twitch, Kick, TikTok) with a minimum length you choose, **Bits** (Twitch) and **Paid subscriptions** (YouTube memberships, Kick subscriptions) and **Diamonds** (TikTok gifts), counted from the live chat while OBS is open |
 | ✍️ | **Manual mode** | Type the current value yourself; always available |
 | 🎉 | **Celebration** | When the goal is reached: a glow and confetti over the bar |
 | 🎬 | **Show a source** | Shows a scene source (image, text, audio or video). Audio and video play from the start and hide when they end |
@@ -98,7 +99,7 @@ In OBS, **Help → Log Files → View Current Log** should show `[obs-goal-bar] 
 ## 🚀 Use it in 5 steps
 
 1. **Add the source.** In a scene, click **+** and pick **Goal Bar**.
-2. **Pick the platform.** **Manual**, **YouTube** (type your `@handle`), **Twitch** (click **Connect Twitch** and enter the code on twitch.tv/activate) or **Kick** (type the channel name, see below).
+2. **Pick the platform.** **Manual**, **YouTube** (type your `@handle`), **Twitch** (click **Connect Twitch** and enter the code on twitch.tv/activate) **Kick** (type the channel name, see below) or **TikTok** (type the `@user`, see below).
 3. **Set the goal.** Choose the metric and type the **Goal**.
 4. **Decide what happens when it is reached.** Under **When the goal is reached**: the animation, a source to show and the auto next goal. Click **Test celebration** to preview it.
 5. **Assign hotkeys (optional).** In **Settings → Hotkeys**, find the source and bind "Test celebration" and "Reset goal".
@@ -128,6 +129,17 @@ Metrics: **Followers** (readable at any time) and **Viewers** (shown while the c
 
 > [!WARNING]
 > Kick data comes from an **undocumented** public endpoint (`kick.com/api/v2/channels/<channel>`), the one Kick's own website uses. It is not part of Kick's official API, sits behind Cloudflare and may change or stop working at any time. If Kick blocks the request, the bar shows "Kick blocked the request" instead of a made-up value.
+
+### 🎵 TikTok
+
+Pick **TikTok** and type the creator's `@user` (or paste their tiktok.com URL). No TikTok account is needed.
+
+- **Followers** (readable at any time) and **Viewers** (while live; "Offline" otherwise) come from tiktok.com, refreshed about every 30 seconds.
+- **Likes** are the live stream's total, the number TikTok shows. They come from the live chat, so they appear with the first like and start again with each new live.
+- **Comments** (with the same minimum length) and **Diamonds** are counted from the live chat while OBS is open. Each gift adds the diamonds it is worth (a gift of 5 diamonds sent 3 times adds 15); a gift combo counts once, when it ends.
+
+> [!WARNING]
+> TikTok publishes no API for this. Followers and viewers come from the endpoint tiktok.com's own website uses, and the live chat is the one its web player reads. TikTok requires that chat connection to be signed: the signature comes from **[Euler Stream](https://www.eulerstream.com)**, a free service with no account that receives the live room's ID and has a **daily limit of connections**. When it is reached, the bar says so and retries every 10 minutes. Any of this can change or stop working at any time.
 
 ## 🔄 Updates
 
@@ -176,7 +188,7 @@ Run the `xattr -dr com.apple.quarantine …` command from the install steps. The
 <details>
 <summary><b>Comments or bits don't count</b></summary>
 
-They are counted from the live chat only while OBS is open. Twitch needs the account connected in the source properties; YouTube needs the channel to be live with its chat on; on Kick, check the channel name. The OBS log shows lines such as `[obs-goal-bar] twitch chat comments: live` or the error that stopped the chat.
+They are counted from the live chat only while OBS is open. Twitch needs the account connected in the source properties; YouTube needs the channel to be live with its chat on; on Kick and TikTok, check the channel or `@user` (TikTok also needs the creator to be live). The OBS log shows lines such as `[obs-goal-bar] twitch chat comments: live` or the error that stopped the chat.
 </details>
 
 ## 🔐 Privacy
@@ -191,9 +203,11 @@ AC Goal Bar has no telemetry and no account of its own. It only connects to the 
 | **Twitch** (`id.twitch.tv`, `api.twitch.tv`) | You connect Twitch | Sign-in with a code on twitch.tv/activate, then followers and subscribers of your channel through the official API |
 | **Twitch chat** (`irc-ws.chat.twitch.tv`) | A Twitch source counts comments or bits | Reads your channel's chat anonymously and read-only (it never writes in it) |
 | **Kick** (`kick.com`, `web.kick.com`, Kick's chat on `ws-*.pusher.com`) | A source uses Kick | Reads the channel's public data (followers, viewers) and, for a comments goal, its public chat. No account |
+| **TikTok** (`www.tiktok.com`, TikTok's chat on `*.tiktok.com`) | A source uses TikTok | Reads the creator's public data (followers, whether they are live, viewers) and, for likes, comments or diamonds, the public live chat. No account |
+| **Euler Stream** (`api.eulerstream.com`) | A TikTok source reads likes, comments or diamonds | Signs the connection to TikTok's live chat. It receives the live room's ID, not your `@user` or anything about you |
 | **GitHub** (`api.github.com`, `github.com`) | When OBS starts (at most once a day) and when you check for updates | Looks for a newer release and, if you accept, downloads it (GitHub may serve the file from its download servers). The request carries the plugin version (`obs-goal-bar-updater/<version>`) |
 
-The only things sent to these services are the requests themselves: your `@handle` or channel name to the platform you chose, and your Twitch token to Twitch.
+The only things sent to these services are the requests themselves: your `@handle` or channel name to the platform you chose, your Twitch token to Twitch, and the TikTok live room's ID to Euler Stream.
 
 **What it saves on your computer**
 
@@ -252,4 +266,4 @@ If you find a bug, please [open an issue](../../issues): every report is read an
 
 GPL-2.0 or later, like every plugin that links against libobs — see [LICENSE](LICENSE).
 
-AC Goal Bar is an independent, third-party plugin for OBS Studio; it is not affiliated with or endorsed by the OBS Project, YouTube, Twitch or Kick. The "GTA 6 (Vice City)" styles are an original look inspired by the game's colors; they use no Rockstar Games artwork or logos, and AC Goal Bar is not affiliated with Rockstar Games or Take-Two Interactive. All trademarks belong to their owners.
+AC Goal Bar is an independent, third-party plugin for OBS Studio; it is not affiliated with or endorsed by the OBS Project, YouTube, Twitch, Kick, TikTok or Euler Stream. The "GTA 6 (Vice City)" styles are an original look inspired by the game's colors; they use no Rockstar Games artwork or logos, and AC Goal Bar is not affiliated with Rockstar Games or Take-Two Interactive. All trademarks belong to their owners.
