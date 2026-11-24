@@ -5,6 +5,7 @@
 #include "providers/chat_count_provider.hpp"
 #include "providers/chat_sessions.hpp"
 #include "providers/kick_provider.hpp"
+#include "providers/tiktok_provider.hpp"
 #include "providers/twitch_provider.hpp"
 #include "providers/youtube_public_provider.hpp"
 
@@ -39,6 +40,12 @@ HttpResult fetch_kick_channel(const std::string &url, CancelToken &cancel)
 	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
 }
 
+HttpResult fetch_tiktok_room(const std::string &url, CancelToken &cancel)
+{
+	net::Response response = net::get(url, tiktok_room_headers(), 10000, &cancel);
+	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
+}
+
 void log_provider(const std::string &message)
 {
 	obs_log(LOG_INFO, "%s", message.c_str());
@@ -46,7 +53,8 @@ void log_provider(const std::string &message)
 
 HttpResult to_http_result(net::Response response)
 {
-	return HttpResult{response.status, std::move(response.body), std::move(response.error)};
+	return HttpResult{response.status, std::move(response.body), std::move(response.error),
+			  std::move(response.headers)};
 }
 
 class NetChatSocket final : public ChatSocket {
@@ -57,6 +65,7 @@ public:
 		return socket_->receive(message) == net::WebSocket::Result::Message;
 	}
 	bool send(const std::string &text) override { return socket_->send(text); }
+	bool send_binary(const std::string &data) override { return socket_->send_binary(data); }
 	void close() override { socket_->close(); }
 
 private:
@@ -67,7 +76,8 @@ ChatNet system_chat_net()
 {
 	ChatNet out;
 	out.get = [](const std::string &url, const HttpHeaders &headers, CancelToken &cancel) {
-		return to_http_result(net::get(url, headers, 10000, &cancel));
+		// 20 s: the TikTok sign server can take a while.
+		return to_http_result(net::get(url, headers, 20000, &cancel));
 	};
 	out.post_json = [](const std::string &url, const std::string &json, const HttpHeaders &headers,
 			   CancelToken &cancel) {
@@ -109,6 +119,11 @@ std::unique_ptr<MetricProvider> make_kick_provider(const std::string &slug, Metr
 	return std::make_unique<KickProvider>(fetch_kick_channel, slug, metric, log_provider);
 }
 
+std::unique_ptr<MetricProvider> make_tiktok_provider(const std::string &handle, Metric metric)
+{
+	return std::make_unique<TikTokProvider>(fetch_tiktok_room, handle, metric, log_provider);
+}
+
 std::unique_ptr<MetricProvider> make_chat_provider(Platform platform, Metric metric, int min_chars,
 						   const std::string &channel)
 {
@@ -122,6 +137,9 @@ std::unique_ptr<MetricProvider> make_chat_provider(Platform platform, Metric met
 		break;
 	case Platform::YouTube:
 		session = youtube_chat_session(system_chat_net(), channel);
+		break;
+	case Platform::TikTok:
+		session = tiktok_chat_session(system_chat_net(), channel, net::kUserAgent);
 		break;
 	default:
 		return nullptr;

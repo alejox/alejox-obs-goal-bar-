@@ -1,6 +1,7 @@
 #include "providers/chat_sessions.hpp"
 
 #include "core/kick_api.hpp"
+#include "core/tiktok_live.hpp"
 #include "core/youtube_page.hpp"
 
 #include <algorithm>
@@ -8,6 +9,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <random>
+#include <thread>
 #include <string_view>
 #include <utility>
 
@@ -107,6 +109,64 @@ private:
 	bool stop_ = false;
 	std::thread thread_; // last member: starts after everything above exists
 };
+
+// Sends TikTok's heartbeat on its own thread while the session reads; closes
+// the socket when a send fails, so the read ends.
+class TikTokHeartbeat {
+public:
+	TikTokHeartbeat(std::shared_ptr<ChatSocket> socket, uint64_t room, std::chrono::milliseconds every)
+		: socket_(std::move(socket)), room_(room), every_(every), thread_([this] { run(); })
+	{
+	}
+	~TikTokHeartbeat()
+	{
+		{
+			std::lock_guard lock(mutex_);
+			stop_ = true;
+		}
+		wake_.notify_all();
+		thread_.join();
+	}
+	TikTokHeartbeat(const TikTokHeartbeat &) = delete;
+	TikTokHeartbeat &operator=(const TikTokHeartbeat &) = delete;
+
+private:
+	void run()
+	{
+		uint64_t sequence = 1;
+		std::unique_lock lock(mutex_);
+		while (!stop_) {
+			lock.unlock();
+			const bool sent = socket_->send_binary(tiktok_heartbeat_frame(room_, sequence++));
+			if (!sent) {
+				socket_->close();
+				return;
+			}
+			lock.lock();
+			if (wake_.wait_for(lock, every_, [this] { return stop_; }))
+				return;
+		}
+	}
+
+	const std::shared_ptr<ChatSocket> socket_;
+	const uint64_t room_;
+	const std::chrono::milliseconds every_;
+	std::mutex mutex_;
+	std::condition_variable wake_;
+	bool stop_ = false;
+	std::thread thread_; // last member: starts after everything above exists
+};
+
+uint64_t room_number(const std::string &room_id)
+{
+	uint64_t out = 0;
+	for (char c : room_id) {
+		if (c < '0' || c > '9')
+			return 0;
+		out = out * 10 + uint64_t(c - '0');
+	}
+	return out;
+}
 
 std::string http_error(const char *what, const HttpResult &result)
 {
@@ -294,6 +354,101 @@ ChatSession youtube_chat_session(ChatNet net, std::string channel_url)
 			continuation = batch.continuation;
 			if (host.wait(std::chrono::milliseconds(std::clamp(batch.timeout_ms, 1000, 6000))))
 				return {};
+		}
+		return {};
+	};
+}
+
+ChatSession tiktok_chat_session(ChatNet net, std::string handle, std::string user_agent, TikTokChatTiming timing)
+{
+	return [net = std::move(net), handle = std::move(handle), user_agent = std::move(user_agent),
+		timing](ChatSessionHost &host) -> std::string {
+		// 1. The room: is the creator live, and in which room.
+		const HttpResult answer = net.get(tiktok_room_url(handle), tiktok_room_headers(), host.cancel());
+		if (host.stopping())
+			return {};
+		if (answer.status == 0)
+			return http_error("TikTok", answer);
+		const TikTokRoomLookup lookup = parse_tiktok_room(answer.status, answer.body);
+		if (lookup.status != TikTokRoomStatus::Found) {
+			const MetricReading reading = tiktok_metric_reading(lookup, Metric::Followers);
+			return reading.message.empty() ? std::string("TikTok error") : reading.message;
+		}
+		const uint64_t room = room_number(lookup.room->room_id);
+		if (!lookup.room->is_live || room == 0) {
+			host.set_state(ProviderState::NotLive);
+			host.wait(timing.not_live_retry);
+			return {};
+		}
+
+		// 2. Euler Stream signs the connection: the push server, its parameters and the cookies.
+		const HttpResult sign = net.get(tiktok_sign_url(lookup.room->room_id, user_agent),
+						{{"Accept", "application/protobuf"}}, host.cancel());
+		if (host.stopping())
+			return {};
+		if (sign.status == 429) {
+			// The free plan's daily limit: retrying at once would not help.
+			host.set_state(ProviderState::RateLimited, kTikTokSignLimit);
+			host.wait(timing.sign_limit_wait);
+			return {};
+		}
+		if (sign.status < 200 || sign.status >= 300 || sign.body.empty())
+			return http_error("The TikTok sign server (Euler Stream)", sign);
+		const TikTokFetch signed_fetch = parse_tiktok_fetch(sign.body);
+		if (signed_fetch.push_server.empty())
+			return "the TikTok sign server gave no chat server";
+		std::string set_cookie;
+		for (const auto &[name, value] : sign.headers) {
+			std::string lower = name;
+			for (char &c : lower)
+				c = char(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+			if (lower == "x-set-tt-cookie")
+				set_cookie = value;
+		}
+
+		// 3. The chat: enter the room and send a heartbeat every 10 s.
+		std::string error;
+		const std::shared_ptr<ChatSocket> socket =
+			net.connect(tiktok_socket_url(signed_fetch, lookup.room->room_id),
+				    {{"Cookie", tiktok_cookie_header(set_cookie)},
+				     {"Origin", "https://www.tiktok.com"},
+				     {"Sec-WebSocket-Protocol", "echo-protocol"}},
+				    error);
+		if (!socket)
+			return "TikTok chat: " + error;
+		host.attach(socket);
+		socket->send_binary(tiktok_enter_room_frame(room));
+		TikTokHeartbeat heartbeat(socket, room, timing.heartbeat);
+
+		bool connected = false;
+		std::string data;
+		while (!host.stopping()) {
+			if (!socket->receive(data)) {
+				if (host.stopping())
+					return {};
+				return connected ? "TikTok closed the chat connection" : "TikTok refused the chat connection";
+			}
+			if (!connected) {
+				connected = true;
+				host.set_state(ProviderState::Live);
+			}
+			const TikTokFrame frame = parse_tiktok_frame(data);
+			if (frame.type != "msg")
+				continue;
+			if (!frame.compress.empty() && frame.compress != "none")
+				return "TikTok sent compressed chat data (" + frame.compress + ")";
+			const TikTokFetch fetch = parse_tiktok_fetch(frame.payload);
+			if (fetch.need_ack)
+				socket->send_binary(tiktok_ack_frame(fetch, frame.log_id));
+			for (const TikTokEvent &event : fetch.events) {
+				const TikTokChatEvent chat = tiktok_chat_event(event);
+				if (chat.stream_ended) {
+					host.set_state(ProviderState::NotLive);
+					return {}; // look for the next live
+				}
+				if (chat.event)
+					host.add(*chat.event);
+			}
 		}
 		return {};
 	};

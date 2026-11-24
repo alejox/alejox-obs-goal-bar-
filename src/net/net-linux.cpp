@@ -49,6 +49,28 @@ struct Transfer {
 	bool too_big = false;
 };
 
+size_t on_header(char *data, size_t size, size_t count, void *user)
+{
+	auto *transfer = static_cast<Transfer *>(user);
+	const size_t n = size * count;
+	std::string line(data, n);
+	while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
+		line.pop_back();
+	// Each response of a redirect chain sends its headers: keep only the last one's.
+	if (line.rfind("HTTP/", 0) == 0) {
+		transfer->res->headers.clear();
+		return n;
+	}
+	const size_t colon = line.find(':');
+	if (colon == std::string::npos)
+		return n;
+	size_t value = colon + 1;
+	while (value < line.size() && line[value] == ' ')
+		++value;
+	transfer->res->headers.emplace_back(line.substr(0, colon), line.substr(value));
+	return n;
+}
+
 size_t on_body(char *data, size_t size, size_t count, void *user)
 {
 	auto *transfer = static_cast<Transfer *>(user);
@@ -133,6 +155,8 @@ Response perform_request(const std::string &url, const Headers &headers, const s
 	Transfer transfer{&res};
 	curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, on_body);
 	curl_easy_setopt(h, CURLOPT_WRITEDATA, &transfer);
+	curl_easy_setopt(h, CURLOPT_HEADERFUNCTION, on_header);
+	curl_easy_setopt(h, CURLOPT_HEADERDATA, &transfer);
 	bool cancelled = false;
 	const CURLcode rc = perform(h, cancel, cancelled);
 	if (cancelled) {
@@ -262,6 +286,7 @@ public:
 	}
 
 	bool send(const std::string &text) override { return send_frame(0x1, text); }
+	bool send_binary(const std::string &data) override { return send_frame(0x2, data); }
 
 	// receive() notices within a tenth of a second.
 	void close() override { closed_ = true; }

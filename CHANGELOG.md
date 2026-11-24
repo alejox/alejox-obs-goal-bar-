@@ -3,6 +3,18 @@
 Each `## <version>` section becomes the description of that release, and the plugin's updater shows
 its items before installing (the Spanish ones when OBS is in Spanish, the English ones otherwise).
 
+## 0.1.9
+
+### Español
+
+- **TikTok:** seguidores y espectadores de cualquier creador, sin cuenta.
+- Metas del directo de TikTok desde su chat en vivo: **me gusta** (el total del directo), **comentarios** con mínimo de caracteres y **diamantes** (cada regalo suma lo que vale). La conexión al chat la firma Euler Stream, gratis y con un límite diario de conexiones.
+
+### English
+
+- **TikTok:** followers and viewers of any creator, no account needed.
+- TikTok live goals from its live chat: **likes** (the live stream's total), **comments** with a minimum length and **diamonds** (each gift adds what it is worth). Euler Stream signs the chat connection, free and with a daily connection limit.
+
 ## 0.1.8
 
 ### Español

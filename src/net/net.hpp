@@ -19,7 +19,10 @@ struct Response {
 	int status = 0; // 0 = no response (see error)
 	std::string body;
 	std::string error;
+	Headers headers; // of the final response (after redirects)
 	bool ok() const { return status >= 200 && status < 300; }
+	// A response header's value (case-insensitive name), or empty.
+	std::string header(const std::string &name) const;
 };
 
 // Follows redirects. Bodies above 16 MiB fail with an error. Cancelling
@@ -48,8 +51,24 @@ public:
 	virtual ~WebSocket() = default;
 	virtual Result receive(std::string &message) = 0;
 	virtual bool send(const std::string &text) = 0;
+	virtual bool send_binary(const std::string &data) = 0;
 	virtual void close() = 0;
 };
+
+inline std::string Response::header(const std::string &name) const
+{
+	const auto lower = [](std::string s) {
+		for (char &c : s)
+			if (c >= 'A' && c <= 'Z')
+				c = char(c - 'A' + 'a');
+		return s;
+	};
+	const std::string want = lower(name);
+	for (const auto &[key, value] : headers)
+		if (lower(key) == want)
+			return value;
+	return {};
+}
 
 // Opens a ws:// or wss:// connection. Returns null and sets `error` on failure;
 // on macOS a failed connection shows up as Closed on the first receive().

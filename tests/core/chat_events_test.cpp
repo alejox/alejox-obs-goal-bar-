@@ -218,8 +218,8 @@ TEST_CASE(chat_tally_counts_bits_or_comments)
 		bits.add(event);
 		comments.add(event);
 	}
-	CHECK_EQ(bits.total(), uint64_t{200});
-	CHECK_EQ(comments.total(), uint64_t{1}); // the cheers have only 3 characters
+	CHECK(bits.value() == uint64_t{200});
+	CHECK(comments.value() == uint64_t{1}); // the cheers have only 3 characters
 }
 
 // ---- paid subscriptions -----------------------------------------------------
@@ -289,6 +289,44 @@ TEST_CASE(youtube_memberships_and_gift_redemptions)
 		comments.add(event);
 	}
 	// New member + renewal + two gift recipients; the purchase itself is not counted again.
-	CHECK_EQ(paid.total(), uint64_t{4});
-	CHECK_EQ(comments.total(), uint64_t{1}); // only "hola" is a chat message
+	CHECK(paid.value() == uint64_t{4});
+	CHECK(comments.value() == uint64_t{1}); // only "hola" is a chat message
+}
+
+// ---- TikTok -----------------------------------------------------------------
+
+TEST_CASE(chat_tally_adds_diamonds)
+{
+	ChatTally diamonds(Metric::Diamonds, 0);
+	ChatEvent rose;
+	rose.diamonds = 1;
+	ChatEvent lion;
+	lion.diamonds = 29999;
+	ChatEvent comment;
+	comment.is_message = true;
+	comment.length = 4;
+	for (const ChatEvent &event : {rose, comment, lion, rose})
+		diamonds.add(event);
+	CHECK(diamonds.value() == uint64_t{30001});
+}
+
+TEST_CASE(chat_tally_keeps_the_room_like_total)
+{
+	ChatTally likes(Metric::Likes, 0);
+	CHECK(!likes.value().has_value()); // unknown until the chat tells it
+	ChatEvent comment;
+	comment.is_message = true;
+	comment.length = 4;
+	likes.add(comment);
+	CHECK(!likes.value().has_value());
+	ChatEvent total;
+	total.room_likes = 1500;
+	likes.add(total);
+	CHECK(likes.value() == uint64_t{1500});
+	total.room_likes = 2100;
+	likes.add(total);
+	CHECK(likes.value() == uint64_t{2100});
+	total.room_likes = 30; // the next live starts again
+	likes.add(total);
+	CHECK(likes.value() == uint64_t{30});
 }

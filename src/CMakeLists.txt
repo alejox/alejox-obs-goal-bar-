@@ -37,6 +37,7 @@ add_library(
   core/sha256.cpp
   core/style_preset.cpp
   core/subscriber_rounding.cpp
+  core/tiktok_live.cpp
   core/twitch_auth.cpp
   core/twitch_helix.cpp
   core/version.cpp
@@ -55,6 +56,7 @@ add_library(
   providers/chat_count_provider.cpp
   providers/chat_sessions.cpp
   providers/kick_provider.cpp
+  providers/tiktok_provider.cpp
   providers/twitch_account.cpp
   providers/twitch_provider.cpp
   providers/youtube_public_provider.cpp)

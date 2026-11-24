@@ -14,6 +14,7 @@ struct HttpResult {
 	int status = 0; // 0 = no response, see `error`
 	std::string body;
 	std::string error;
+	HttpHeaders headers = {}; // the response's (set only where an adapter needs them)
 };
 
 } // namespace goalbar
