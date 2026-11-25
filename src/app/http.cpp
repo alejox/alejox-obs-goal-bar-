@@ -125,4 +125,19 @@ std::string format_http_response(const HttpResponse &response, bool head_only, b
 	return out;
 }
 
+std::string query_param(std::string_view query, std::string_view name)
+{
+	while (!query.empty()) {
+		const std::size_t amp = query.find('&');
+		const std::string_view pair = query.substr(0, amp);
+		const std::size_t eq = pair.find('=');
+		if (pair.substr(0, eq) == name)
+			return eq == std::string_view::npos ? std::string() : std::string(pair.substr(eq + 1));
+		if (amp == std::string_view::npos)
+			break;
+		query.remove_prefix(amp + 1);
+	}
+	return {};
+}
+
 } // namespace goalbar::app

@@ -46,4 +46,8 @@ std::string format_http_response(const HttpResponse &response, bool head_only, b
 
 std::string_view http_reason(int status);
 
+// The value of `name` in a query string ("a=1&b=2"), or "" (no decoding: the
+// overlay only sends numbers and letters).
+std::string query_param(std::string_view query, std::string_view name);
+
 } // namespace goalbar::app

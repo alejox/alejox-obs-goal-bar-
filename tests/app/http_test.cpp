@@ -67,3 +67,12 @@ TEST_CASE(responses_carry_length_and_no_cache)
 	CHECK(head.find("Content-Length: 7\r\n") != std::string::npos);
 	CHECK(head.find("Connection: close\r\n") != std::string::npos);
 }
+
+TEST_CASE(query_parameters)
+{
+	CHECK_EQ(query_param("since=12&id=ab3", "since"), std::string("12"));
+	CHECK_EQ(query_param("since=12&id=ab3", "id"), std::string("ab3"));
+	CHECK_EQ(query_param("since=12&id=ab3", "x"), std::string(""));
+	CHECK_EQ(query_param("flag&since=1", "flag"), std::string(""));
+	CHECK_EQ(query_param("", "since"), std::string(""));
+}

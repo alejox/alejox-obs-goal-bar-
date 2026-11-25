@@ -79,7 +79,7 @@ set_target_properties(goal-bar-update PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Overlay app logic without Qt: settings, the goal engine and the local web server (HTTP
 # parsing and loopback sockets), tested with the core.
-add_library(goal-bar-app-core STATIC app/goal_engine.cpp app/http.cpp app/http_server.cpp app/overlay_settings.cpp)
+add_library(goal-bar-app-core STATIC app/frame_service.cpp app/goal_engine.cpp app/http.cpp app/http_server.cpp app/overlay_settings.cpp)
 target_link_libraries(goal-bar-app-core PUBLIC goal-bar-core goal-bar-providers Threads::Threads)
 target_include_directories(goal-bar-app-core SYSTEM PRIVATE "${nlohmann_json_header_SOURCE_DIR}")
 if(WIN32)
