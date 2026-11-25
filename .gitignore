@@ -7,6 +7,7 @@
 !/docs
 !/src
 !/tests
+!/overlay-app
 !/.github
 !/.gitignore
 !/buildspec.json
