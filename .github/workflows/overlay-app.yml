@@ -6,7 +6,7 @@ name: Overlay app
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/meld-overlay-app]
     paths: ['overlay-app/**', 'src/**', 'data/**', '.github/workflows/overlay-app.yml']
   pull_request:
     paths: ['overlay-app/**', 'src/**', 'data/**', '.github/workflows/overlay-app.yml']
