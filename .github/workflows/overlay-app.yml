@@ -1,0 +1,211 @@
+name: Overlay app
+
+# AC Goal Bar Overlay (the Goal Bar for Meld Studio) builds on its own, apart from the OBS
+# plugin: this workflow never touches the plugin's packages or releases. It uses the same
+# Qt as the plugin (obs-deps, pinned with its hash in buildspec.json) and bundles it.
+
+on:
+  push:
+    branches: [main]
+    paths: ['overlay-app/**', 'src/**', 'data/**', '.github/workflows/overlay-app.yml']
+  pull_request:
+    paths: ['overlay-app/**', 'src/**', 'data/**', '.github/workflows/overlay-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Qt (obs-deps)
+        run: |
+          $spec = (Get-Content buildspec.json -Raw | ConvertFrom-Json).dependencies.qt6
+          $file = "windows-deps-qt6-$($spec.version)-x64.zip"
+          $url = "$($spec.baseUrl)/$($spec.version)/$file"
+          foreach ($attempt in 1..3) {
+            try { Invoke-WebRequest -Uri $url -OutFile $file; break } catch { Start-Sleep -Seconds 20 }
+          }
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $spec.hashes.'windows-x64') { throw "Qt archive hash mismatch: $hash" }
+          Expand-Archive $file -DestinationPath qt6
+          "QT_DIR=$PWD\qt6" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build
+        run: |
+          cmake -S overlay-app -B build_overlay -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_DIR"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build_overlay --config RelWithDebInfo --parallel
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package
+        run: |
+          $version = (Get-Content overlay-app/version.txt -Raw).Trim()
+          $name = "AC Goal Bar Overlay"
+          $stage = "stage/$name"
+          New-Item -ItemType Directory -Force "$stage/platforms", "$stage/styles" | Out-Null
+          Copy-Item "build_overlay/RelWithDebInfo/ac-goal-bar-overlay.exe" "$stage/AC Goal Bar Overlay.exe"
+          Copy-Item -Recurse "build_overlay/RelWithDebInfo/data" "$stage/data"
+          foreach ($dll in "Qt6Core", "Qt6Gui", "Qt6Widgets") { Copy-Item "$env:QT_DIR/bin/$dll.dll" $stage }
+          Copy-Item "$env:QT_DIR/plugins/platforms/qwindows.dll" "$stage/platforms"
+          Copy-Item "$env:QT_DIR/plugins/styles/qmodernwindowsstyle.dll" "$stage/styles"
+          # The Visual C++ runtime, app-local, so nothing else needs installing.
+          foreach ($dll in "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll") {
+            Copy-Item "$env:WINDIR/System32/$dll" $stage
+          }
+          @(
+            "AC Goal Bar Overlay $version for Windows x64."
+            "Extract this folder anywhere (for example Documents) and open 'AC Goal Bar Overlay.exe'."
+            "Copy the overlay URL from the app and paste it onto the Meld Studio canvas."
+          ) | Set-Content "$stage/LEEME - README.txt"
+          $package = "ac-goal-bar-overlay-$version-windows-x64.zip"
+          Compress-Archive -Path $stage -DestinationPath $package
+          "PACKAGE=$package" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Starts the packaged app (Qt's minimal platform: no screen on the runner) and asks
+      # its web server for the overlay, as Meld would.
+      - name: Smoke test
+        run: |
+          $stage = "stage/AC Goal Bar Overlay"
+          Copy-Item "$env:QT_DIR/plugins/platforms/qminimal.dll" "$stage/platforms"
+          $env:QT_QPA_PLATFORM = "minimal"
+          $app = Start-Process -FilePath "$stage/AC Goal Bar Overlay.exe" -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..30) {
+              Start-Sleep -Seconds 1
+              try {
+                $health = Invoke-RestMethod "http://127.0.0.1:48722/health"
+                $page = Invoke-WebRequest "http://127.0.0.1:48722/goal-bar" -UseBasicParsing
+                $frame = Invoke-WebRequest "http://127.0.0.1:48722/goal-bar/frame?since=0&id=ci" -UseBasicParsing
+                if ($frame.StatusCode -eq 200 -and $frame.Headers["Content-Type"] -eq "image/png") { $ok = $true; break }
+              } catch {}
+            }
+            if (-not $ok) { throw "the app did not serve the overlay" }
+            "health: $($health | ConvertTo-Json -Compress)"
+          } finally {
+            Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+            Remove-Item "$stage/platforms/qminimal.dll" -ErrorAction SilentlyContinue
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ac-goal-bar-overlay-windows-x64
+          path: ${{ env.PACKAGE }}
+          if-no-files-found: error
+
+  macos-arm64:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download Qt (obs-deps)
+        run: |
+          version="$(jq -r .dependencies.qt6.version buildspec.json)"
+          base="$(jq -r .dependencies.qt6.baseUrl buildspec.json)"
+          expected="$(jq -r .dependencies.qt6.hashes.macos buildspec.json)"
+          file="macos-deps-qt6-${version}-universal.tar.xz"
+          curl -fsSL --retry 3 -o "$file" "$base/$version/$file"
+          echo "$expected  $file" | shasum -a 256 -c -
+          mkdir qt6 && tar -xJf "$file" -C qt6
+          echo "QT_DIR=$PWD/qt6" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          cmake -S overlay-app -B build_overlay -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH="$QT_DIR" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+          cmake --build build_overlay --parallel
+
+      - name: Package
+        run: |
+          version="$(tr -d '[:space:]' < overlay-app/version.txt)"
+          app="build_overlay/AC Goal Bar Overlay.app"
+          test -d "$app"
+          mkdir -p "$app/Contents/Frameworks" "$app/Contents/PlugIns/platforms" "$app/Contents/PlugIns/styles"
+          for framework in QtCore QtGui QtWidgets; do
+            rsync -a --exclude Headers --exclude '*.prl' --exclude 'Resources/*.cmake' \
+              "$QT_DIR/lib/$framework.framework" "$app/Contents/Frameworks/"
+            rm -rf "$app/Contents/Frameworks/$framework.framework/Headers"
+          done
+          cp "$QT_DIR/plugins/platforms/libqcocoa.dylib" "$app/Contents/PlugIns/platforms/"
+          cp "$QT_DIR/plugins/styles/libqmacstyle.dylib" "$app/Contents/PlugIns/styles/"
+          for plugin in "$app"/Contents/PlugIns/*/*.dylib; do
+            install_name_tool -add_rpath "@loader_path/../../Frameworks" "$plugin"
+          done
+          printf '[Paths]\nPlugins = PlugIns\n' > "$app/Contents/Resources/qt.conf"
+          # Only the arm64 slice: half the size.
+          for binary in "$app"/Contents/Frameworks/*.framework/Versions/A/Qt* "$app"/Contents/PlugIns/*/*.dylib; do
+            lipo "$binary" -thin arm64 -output "$binary.thin" && mv "$binary.thin" "$binary"
+          done
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          otool -L "$app/Contents/MacOS/AC Goal Bar Overlay" | grep -i qt
+          package="ac-goal-bar-overlay-${version}-macos-arm64.zip"
+          ditto -c -k --norsrc --keepParent "$app" "$package"
+          echo "PACKAGE=$package" >> "$GITHUB_ENV"
+
+      - name: Smoke test
+        run: |
+          app="build_overlay/AC Goal Bar Overlay.app"
+          cp "$QT_DIR/plugins/platforms/libqminimal.dylib" "$app/Contents/PlugIns/platforms/"
+          install_name_tool -add_rpath "@loader_path/../../Frameworks" "$app/Contents/PlugIns/platforms/libqminimal.dylib"
+          codesign --force --sign - "$app/Contents/PlugIns/platforms/libqminimal.dylib"
+          QT_QPA_PLATFORM=minimal "$app/Contents/MacOS/AC Goal Bar Overlay" &
+          pid=$!
+          ok=0
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -fs -o frame.png -w '%{content_type}\n' "http://127.0.0.1:48722/goal-bar/frame?since=0&id=ci" | grep -q image/png; then
+              ok=1; break
+            fi
+          done
+          curl -fs http://127.0.0.1:48722/health; echo
+          kill $pid || true
+          test "$ok" = 1 || { echo "the app did not serve the overlay"; exit 1; }
+          file frame.png
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ac-goal-bar-overlay-macos-arm64
+          path: ${{ env.PACKAGE }}
+          if-no-files-found: error
+
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libcurl4-openssl-dev libsecret-1-dev ninja-build pkg-config qt6-base-dev
+
+      - name: Build
+        run: |
+          cmake -S overlay-app -B build_overlay -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build_overlay
+
+      - name: Smoke test
+        run: |
+          QT_QPA_PLATFORM=offscreen build_overlay/ac-goal-bar-overlay &
+          pid=$!
+          ok=0
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -fs -o frame.png -w '%{content_type}\n' "http://127.0.0.1:48722/goal-bar/frame?since=0&id=ci" | grep -q image/png; then
+              ok=1; break
+            fi
+          done
+          kill $pid || true
+          test "$ok" = 1 || { echo "the app did not serve the overlay"; exit 1; }
+          file frame.png

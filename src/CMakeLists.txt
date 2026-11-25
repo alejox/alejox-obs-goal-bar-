@@ -107,6 +107,7 @@ if(GOAL_BAR_SYSTEM)
   elseif(APPLE)
     enable_language(OBJCXX)
     target_sources(goal-bar-system PRIVATE net/net-mac.mm secrets/keychain_secret_store.cpp)
+    target_compile_options(goal-bar-system PRIVATE $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
     target_link_libraries(
       goal-bar-system
       PUBLIC
