@@ -76,3 +76,47 @@ add_library(
 target_link_libraries(goal-bar-update PUBLIC goal-bar-core)
 target_include_directories(goal-bar-update SYSTEM PRIVATE "${nlohmann_json_header_SOURCE_DIR}")
 set_target_properties(goal-bar-update PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Overlay app logic without Qt: its local web server (HTTP parsing and loopback sockets),
+# tested with the core.
+add_library(goal-bar-app-core STATIC app/http.cpp app/http_server.cpp)
+target_link_libraries(goal-bar-app-core PUBLIC goal-bar-core Threads::Threads)
+if(WIN32)
+  target_link_libraries(goal-bar-app-core PUBLIC ws2_32)
+endif()
+
+# The system adapters (HTTPS, WebSocket, secret store, provider factory, Twitch account),
+# shared by the OBS plugin and the overlay app; neither OBS nor Qt. Off for the tests,
+# which use fakes. The system HTTPS stack is used because OBS does not ship Qt's TLS
+# plugins on Windows or macOS (same approach as multi-chat); the OS secret store keeps
+# the Twitch refresh token (Keychain, Credential Manager, Secret Service).
+option(GOAL_BAR_SYSTEM "Build the system adapters (network, secret store)" OFF)
+if(GOAL_BAR_SYSTEM)
+  add_library(
+    goal-bar-system STATIC
+    system/log.cpp
+    system/providers.cpp
+    system/twitch_services.cpp
+    secrets/platform_secret_store.cpp)
+  target_link_libraries(goal-bar-system PUBLIC goal-bar-providers)
+  set_target_properties(goal-bar-system PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  if(WIN32)
+    target_sources(goal-bar-system PRIVATE net/net-win.cpp secrets/windows_credential_store.cpp)
+    target_link_libraries(goal-bar-system PUBLIC winhttp Advapi32)
+  elseif(APPLE)
+    enable_language(OBJCXX)
+    target_sources(goal-bar-system PRIVATE net/net-mac.mm secrets/keychain_secret_store.cpp)
+    target_link_libraries(
+      goal-bar-system
+      PUBLIC
+        "$<LINK_LIBRARY:FRAMEWORK,Foundation.framework>"
+        "$<LINK_LIBRARY:FRAMEWORK,CoreFoundation.framework>"
+        "$<LINK_LIBRARY:FRAMEWORK,Security.framework>")
+  else()
+    find_package(CURL REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
+    target_sources(goal-bar-system PRIVATE net/net-linux.cpp secrets/linux_secret_store.cpp)
+    target_link_libraries(goal-bar-system PUBLIC CURL::libcurl PkgConfig::LIBSECRET)
+  endif()
+endif()

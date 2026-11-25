@@ -75,3 +75,8 @@ add_update_test(update_check_test update/update_check_test.cpp)
 add_update_test(staging_test update/staging_test.cpp)
 add_update_test(install_plan_test update/install_plan_test.cpp)
 add_update_test(update_settings_test update/update_settings_test.cpp)
+
+add_core_test(http_test app/http_test.cpp)
+target_link_libraries(http_test PRIVATE goal-bar-app-core)
+add_core_test(http_server_test app/http_server_test.cpp)
+target_link_libraries(http_server_test PRIVATE goal-bar-app-core)

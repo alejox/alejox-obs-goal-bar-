@@ -15,42 +15,8 @@ include(compilerconfig)
 include(defaults)
 include(helpers)
 
+set(GOAL_BAR_SYSTEM ON)
 add_subdirectory(src)
-
-# The system adapters (HTTPS, WebSocket, secret store, providers, Twitch account) shared by the
-# plugin and the overlay app. Neither OBS nor Qt.
-# System HTTPS stack: OBS does not ship Qt's TLS plugins on Windows or macOS, so
-# QtNetwork cannot do HTTPS inside OBS (same approach as multi-chat).
-# OS secret store for the Twitch refresh token (Keychain, Credential Manager,
-# Secret Service), adapted from multi-stream.
-add_library(goal-bar-system STATIC)
-target_sources(
-  goal-bar-system
-  PRIVATE src/system/log.cpp src/system/providers.cpp src/system/twitch_services.cpp src/secrets/platform_secret_store.cpp
-)
-target_link_libraries(goal-bar-system PUBLIC goal-bar-providers)
-target_include_directories(goal-bar-system PUBLIC src)
-set_target_properties(goal-bar-system PROPERTIES POSITION_INDEPENDENT_CODE ON)
-if(OS_WINDOWS)
-  target_sources(goal-bar-system PRIVATE src/net/net-win.cpp src/secrets/windows_credential_store.cpp)
-  target_link_libraries(goal-bar-system PUBLIC winhttp Advapi32)
-elseif(OS_MACOS)
-  enable_language(OBJCXX)
-  target_sources(goal-bar-system PRIVATE src/net/net-mac.mm src/secrets/keychain_secret_store.cpp)
-  target_link_libraries(
-    goal-bar-system
-    PUBLIC
-      "$<LINK_LIBRARY:FRAMEWORK,Foundation.framework>"
-      "$<LINK_LIBRARY:FRAMEWORK,CoreFoundation.framework>"
-      "$<LINK_LIBRARY:FRAMEWORK,Security.framework>"
-  )
-else()
-  find_package(CURL REQUIRED)
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
-  target_sources(goal-bar-system PRIVATE src/net/net-linux.cpp src/secrets/linux_secret_store.cpp)
-  target_link_libraries(goal-bar-system PUBLIC CURL::libcurl PkgConfig::LIBSECRET)
-endif()
 
 add_library(${CMAKE_PROJECT_NAME} MODULE)
 
