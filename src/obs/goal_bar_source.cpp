@@ -5,16 +5,16 @@
 #include "core/goal_settings.hpp"
 #include "core/goal_view.hpp"
 #include "core/kick_api.hpp"
-#include "core/tiktok_live.hpp"
 #include "core/progress_tween.hpp"
 #include "core/style_preset.hpp"
 #include "core/subscriber_rounding.hpp"
+#include "core/tiktok_live.hpp"
 #include "core/youtube_page.hpp"
 #include "obs/goal_actions.hpp"
-#include "obs/provider_factory.hpp"
-#include "obs/twitch_services.hpp"
 #include "providers/twitch_provider.hpp"
 #include "render/goal_bar_painter.hpp"
+#include "system/providers.hpp"
+#include "system/twitch_services.hpp"
 #include "ui/support_dialog.hpp"
 #include "ui/twitch_connect_dialog.hpp"
 
@@ -37,6 +37,8 @@
 
 namespace goalbar::obs {
 namespace {
+
+using namespace goalbar::sys;
 
 constexpr const char *kSourceId = "goal_bar_source";
 

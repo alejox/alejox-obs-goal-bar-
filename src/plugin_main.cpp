@@ -21,6 +21,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "core/version.hpp"
 #include "obs/goal_bar_source.hpp"
 #include "obs/obs_shutdown.hpp"
+#include "system/log.hpp"
 #include "ui/update_controller.hpp"
 #include "update/staging.hpp"
 #include "update/update_check.hpp"
@@ -112,6 +113,7 @@ void on_frontend_event(enum obs_frontend_event event, void *)
 
 bool obs_module_load(void)
 {
+	goalbar::sys::set_log_sink([](const std::string &message) { obs_log(LOG_INFO, "%s", message.c_str()); });
 	goalbar::obs::watch_obs_shutdown();
 	load_style_fonts();
 	goalbar::obs::register_goal_bar_source();

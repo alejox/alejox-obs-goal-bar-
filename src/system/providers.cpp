@@ -1,7 +1,8 @@
-#include "obs/provider_factory.hpp"
+#include "system/providers.hpp"
 
 #include "net/net.hpp"
-#include "obs/twitch_services.hpp"
+#include "system/log.hpp"
+#include "system/twitch_services.hpp"
 #include "providers/chat_count_provider.hpp"
 #include "providers/chat_sessions.hpp"
 #include "providers/kick_provider.hpp"
@@ -9,14 +10,11 @@
 #include "providers/twitch_provider.hpp"
 #include "providers/youtube_public_provider.hpp"
 
-#include <obs-module.h>
-#include <plugin-support.h>
-
 #include <memory>
 #include <optional>
 #include <utility>
 
-namespace goalbar::obs {
+namespace goalbar::sys {
 namespace {
 
 // The consent cookies skip the EU cookie wall; English keeps the subscriber
@@ -48,7 +46,7 @@ HttpResult fetch_tiktok_room(const std::string &url, CancelToken &cancel)
 
 void log_provider(const std::string &message)
 {
-	obs_log(LOG_INFO, "%s", message.c_str());
+	log(message);
 }
 
 HttpResult to_http_result(net::Response response)
@@ -147,4 +145,4 @@ std::unique_ptr<MetricProvider> make_chat_provider(Platform platform, Metric met
 	return std::make_unique<ChatCountProvider>(platform, metric, min_chars, std::move(session), log_provider);
 }
 
-} // namespace goalbar::obs
+} // namespace goalbar::sys

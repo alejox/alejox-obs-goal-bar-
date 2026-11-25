@@ -1,15 +1,13 @@
-#include "obs/twitch_services.hpp"
+#include "system/twitch_services.hpp"
 
 #include "net/net.hpp"
 #include "providers/twitch_client_id.hpp"
 #include "secrets/platform_secret_store.hpp"
-
-#include <obs-module.h>
-#include <plugin-support.h>
+#include "system/log.hpp"
 
 #include <utility>
 
-namespace goalbar::obs {
+namespace goalbar::sys {
 namespace {
 
 HttpResult to_result(net::Response response)
@@ -31,7 +29,7 @@ TwitchHttp system_http()
 // Messages never carry tokens (see TwitchAccount).
 void log_account(const std::string &message)
 {
-	obs_log(LOG_INFO, "%s", message.c_str());
+	log(message);
 }
 
 } // namespace
@@ -43,4 +41,4 @@ std::shared_ptr<TwitchAccount> twitch_account()
 	return account;
 }
 
-} // namespace goalbar::obs
+} // namespace goalbar::sys

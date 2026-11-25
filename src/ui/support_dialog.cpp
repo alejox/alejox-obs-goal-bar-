@@ -1,6 +1,5 @@
 #include "ui/support_dialog.hpp"
-
-#include <obs-module.h>
+#include "ui/ui_text.hpp"
 
 #include <QDesktopServices>
 #include <QDialog>
@@ -17,7 +16,7 @@ constexpr const char *kKofiUrl = "https://ko-fi.com/alejoxcode";
 
 QString text(const char *key)
 {
-	return QString::fromUtf8(obs_module_text(key));
+	return ui_text(key);
 }
 
 } // namespace

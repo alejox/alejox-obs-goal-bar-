@@ -1,6 +1,5 @@
 #include "ui/twitch_connect_dialog.hpp"
-
-#include <obs-module.h>
+#include "ui/ui_text.hpp"
 
 #include <QClipboard>
 #include <QDesktopServices>
@@ -24,7 +23,7 @@ namespace {
 
 QString text(const char *key)
 {
-	return QString::fromUtf8(obs_module_text(key));
+	return ui_text(key);
 }
 
 class TwitchConnectDialog final : public QDialog {

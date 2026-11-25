@@ -1,5 +1,6 @@
-// OBS adapter: builds metric providers wired to the system network stack and
-// the OBS log.
+// System adapter: builds metric providers wired to the system network stack
+// and the log sink (see system/log.hpp). No OBS: the plugin and the overlay
+// app share it.
 #pragma once
 
 #include "core/metric_provider.hpp"
@@ -7,7 +8,7 @@
 #include <memory>
 #include <string>
 
-namespace goalbar::obs {
+namespace goalbar::sys {
 
 // A YouTube public-mode provider for a canonical channel URL (see
 // normalize_youtube_channel). It starts polling at once.
@@ -33,4 +34,4 @@ std::unique_ptr<MetricProvider> make_tiktok_provider(const std::string &handle, 
 std::unique_ptr<MetricProvider> make_chat_provider(Platform platform, Metric metric, int min_chars,
 						   const std::string &channel);
 
-} // namespace goalbar::obs
+} // namespace goalbar::sys
